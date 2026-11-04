@@ -2,14 +2,14 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>원자재 재고 관리 시스템</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     
-    <!-- Firebase SDK 추가 (Compat 버전 사용으로 기존 코드와 완벽 호환) -->
+    <!-- Firebase SDK 추가 -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
@@ -21,7 +21,6 @@
             .no-print { display: none !important; }
         }
         
-        /* 엑셀 테이블 스타일 (너비를 내용에 맞추고 중앙 정렬 최적화) */
         .excel-table { border-collapse: collapse; border: 1px solid #94a3b8; width: max-content; background: #fff; margin: 16px auto; }
         .excel-th { border: 1px solid #cbd5e1; text-align: center; vertical-align: middle; padding: 4px 6px; font-size: 11px; white-space: nowrap; color: #334155; }
         .excel-td { border: 1px solid #cbd5e1; text-align: center; vertical-align: middle; padding: 4px 6px; font-size: 11px; white-space: nowrap; height: 26px; cursor: pointer; }
@@ -62,63 +61,81 @@
         .zone-btn.active { background-color: #facc15; color: black; border: 2px solid #ef4444; box-shadow: 0 0 5px rgba(239,68,68,0.8); z-index: 10;}
     </style>
 </head>
-<body class="bg-[#f8fafc] p-4 font-sans h-screen flex flex-col overflow-hidden">
+<body class="bg-[#f8fafc] p-2 md:p-4 font-sans h-screen flex flex-col overflow-hidden text-sm sm:text-base">
 
-    <div class="w-full bg-white p-4 rounded shadow-sm border border-gray-200 flex-grow flex flex-col overflow-hidden">
+    <div class="w-full bg-white p-2 sm:p-4 rounded shadow-sm border border-gray-200 flex-grow flex flex-col overflow-hidden">
         
         <!-- 상단 헤더 -->
-        <div class="flex justify-between items-start mb-4">
-            <div>
-                <h1 class="text-[24px] font-bold mb-3 tracking-tight text-gray-800" id="mainTitle">[2026년 원자재 재고 현황]</h1>
-                <div class="flex gap-2 flex-wrap">
-                    <button onclick="openInboundModal()" class="bg-[#3b82f6] text-white px-5 py-2 text-sm font-bold rounded shadow-sm hover:bg-blue-600 transition">+ 입고증 작성</button>
-                    <button onclick="openOutboundModal()" class="bg-[#ef4444] text-white px-5 py-2 text-sm font-bold rounded shadow-sm hover:bg-red-600 transition">- 출고증 작성</button>
-                    <button onclick="exportExcel()" class="bg-[#10b981] text-white px-5 py-2 text-sm font-bold rounded shadow-sm hover:bg-green-600 transition">엑셀 다운로드</button>
-                    <label class="bg-[#d97706] text-white px-5 py-2 text-sm font-bold rounded shadow-sm hover:bg-yellow-600 cursor-pointer transition">
+        <div class="flex flex-col xl:flex-row justify-between items-start mb-3 gap-3">
+            <div class="w-full xl:w-auto">
+                <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mb-3">
+                    <h1 class="text-xl sm:text-[24px] font-bold tracking-tight text-gray-800" id="mainTitle">[2026년 원자재 재고 현황]</h1>
+                    <div class="bg-white text-gray-800 px-3 py-1.5 rounded-md shadow-sm text-xs sm:text-sm font-bold flex items-center gap-2 border border-gray-300 w-fit">
+                        <span>오늘 날짜 :</span>
+                        <span id="topTodayDateStr" class="text-black text-sm sm:text-base tracking-wider"></span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+                    <button onclick="openInboundModal()" class="bg-[#3b82f6] text-white px-3 py-2 sm:px-5 sm:py-2 text-xs sm:text-sm font-bold rounded shadow-sm hover:bg-blue-600 transition">+ 입고증 작성</button>
+                    <button onclick="openOutboundModal()" class="bg-[#ef4444] text-white px-3 py-2 sm:px-5 sm:py-2 text-xs sm:text-sm font-bold rounded shadow-sm hover:bg-red-600 transition">- 출고증 작성</button>
+                    <button onclick="exportExcel()" class="bg-[#10b981] text-white px-3 py-2 sm:px-5 sm:py-2 text-xs sm:text-sm font-bold rounded shadow-sm hover:bg-green-600 transition">엑셀 다운로드</button>
+                    
+                    <!-- 데이터 동기화 엑셀 업로드 -->
+                    <label class="bg-[#d97706] text-white px-3 py-2 sm:px-5 sm:py-2 text-xs sm:text-sm font-bold rounded shadow-sm hover:bg-yellow-600 cursor-pointer transition text-center flex items-center justify-center">
                         엑셀 업로드
                         <input type="file" id="excelUpload" accept=".xlsx, .xls" class="hidden" onchange="importExcel(event)">
                     </label>
-                    <button onclick="openHistoryModal()" class="bg-gray-700 text-white px-5 py-2 text-sm font-bold rounded shadow-sm hover:bg-gray-800 transition">내역 관리</button>
+
+                    <!-- 양식 전용 업로드 추가 -->
+                    <label class="bg-[#8b5cf6] text-white px-3 py-2 sm:px-5 sm:py-2 text-xs sm:text-sm font-bold rounded shadow-sm hover:bg-purple-600 cursor-pointer transition text-center flex items-center justify-center">
+                        양식 업로드
+                        <input type="file" id="templateUpload" accept=".xlsx, .xls" class="hidden" onchange="importTemplate(event)">
+                    </label>
+
+                    <button onclick="openHistoryModal()" class="bg-gray-700 text-white px-3 py-2 sm:px-5 sm:py-2 text-xs sm:text-sm font-bold rounded shadow-sm hover:bg-gray-800 transition">내역 관리</button>
                 </div>
                 
-                <!-- 자동완성 필터 영역 -->
-                <div class="flex gap-4 mt-4 bg-gray-50 p-2.5 rounded shadow-sm border border-gray-200 text-sm">
-                    <div class="flex items-center gap-2">
+                <div class="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 sm:gap-4 mt-3 bg-gray-50 p-2 sm:p-2.5 rounded shadow-sm border border-gray-200 text-xs sm:text-sm">
+                    <div class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                         <label class="font-bold text-gray-700">강종</label>
-                        <input list="steelFilterList" id="filterSteelType" oninput="triggerFilterUpdate()" class="border border-gray-300 rounded p-1.5 w-[110px]" placeholder="전체 (검색)">
+                        <input list="steelFilterList" id="filterSteelType" oninput="triggerFilterUpdate()" class="border border-gray-300 rounded p-1.5 w-full sm:w-[110px]" placeholder="전체 (검색)">
                         <datalist id="steelFilterList"></datalist>
                     </div>
-                    <div class="flex items-center gap-2">
+                    <div class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                         <label class="font-bold text-gray-700">재질</label>
-                        <input list="matFilterList" id="filterMaterial" oninput="triggerFilterUpdate()" class="border border-gray-300 rounded p-1.5 w-[150px]" placeholder="전체 (검색)">
+                        <input list="matFilterList" id="filterMaterial" oninput="triggerFilterUpdate()" class="border border-gray-300 rounded p-1.5 w-full sm:w-[150px]" placeholder="전체 (검색)">
                         <datalist id="matFilterList"></datalist>
                     </div>
-                    <div class="flex items-center gap-2">
+                    <div class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 col-span-2 sm:col-span-1">
                         <label class="font-bold text-gray-700">두께</label>
-                        <input list="thkFilterList" id="filterThickness" oninput="triggerFilterUpdate()" class="border border-gray-300 rounded p-1.5 w-[110px]" placeholder="전체 (검색)">
+                        <input list="thkFilterList" id="filterThickness" oninput="triggerFilterUpdate()" class="border border-gray-300 rounded p-1.5 w-full sm:w-[110px]" placeholder="전체 (검색)">
                         <datalist id="thkFilterList"></datalist>
                     </div>
-                    <button onclick="resetFilters()" class="bg-gray-500 text-white px-4 py-1.5 rounded font-bold hover:bg-gray-600 transition">초기화</button>
+                    <button onclick="resetFilters()" class="bg-gray-500 text-white px-4 py-1.5 rounded font-bold hover:bg-gray-600 transition w-full sm:w-auto col-span-2 sm:col-span-1">초기화</button>
                 </div>
             </div>
 
             <!-- 우측 상단 정보 표 -->
-            <div class="flex flex-col items-end gap-2">
-                <div class="flex gap-3">
+            <div class="flex flex-row xl:flex-col gap-2 w-full xl:w-auto overflow-x-auto pb-2 xl:pb-0 items-end">
+                <div class="flex gap-2 flex-shrink-0">
                     <table class="border-collapse border border-[#94a3b8] text-center shadow-sm">
-                        <tr><th colspan="6" class="border border-[#94a3b8] bg-white py-0.5 text-[11px] font-normal text-gray-600">공정별 구분</th></tr>
-                        <tr class="text-[11px]"><td class="border border-[#94a3b8] px-2 py-1">프레스</td><td class="border border-[#94a3b8] w-5 bg-white"></td><td class="border border-[#94a3b8] px-2 py-1">개발</td><td class="border border-[#94a3b8] w-5 bg-[#fef08a]"></td><td class="border border-[#94a3b8] px-2 py-1">조립</td><td class="border border-[#94a3b8] w-5 bg-[#fef08a]"></td></tr>
-                        <tr class="text-[11px]"><td class="border border-[#94a3b8] px-2 py-1">레이저</td><td class="border border-[#94a3b8] w-5 bg-white"></td><td class="border border-[#94a3b8] px-2 py-1">선행</td><td class="border border-[#94a3b8] w-5 bg-white"></td><td class="border border-[#94a3b8] px-2 py-1">생산3</td><td class="border border-[#94a3b8] w-5 bg-[#93c5fd]"></td></tr>
+                        <tr><th colspan="6" class="border border-[#94a3b8] bg-white py-0.5 text-[10px] sm:text-[11px] font-normal text-gray-600">공정별 구분</th></tr>
+                        <tr class="text-[10px] sm:text-[11px]"><td class="border border-[#94a3b8] px-1 sm:px-2 py-1">프레스</td><td class="border border-[#94a3b8] w-3 sm:w-5 bg-white"></td><td class="border border-[#94a3b8] px-1 sm:px-2 py-1">개발</td><td class="border border-[#94a3b8] w-3 sm:w-5 bg-[#fef08a]"></td><td class="border border-[#94a3b8] px-1 sm:px-2 py-1">조립</td><td class="border border-[#94a3b8] w-3 sm:w-5 bg-[#fef08a]"></td></tr>
+                        <tr class="text-[10px] sm:text-[11px]"><td class="border border-[#94a3b8] px-1 sm:px-2 py-1">레이저</td><td class="border border-[#94a3b8] w-3 sm:w-5 bg-white"></td><td class="border border-[#94a3b8] px-1 sm:px-2 py-1">선행</td><td class="border border-[#94a3b8] w-3 sm:w-5 bg-white"></td><td class="border border-[#94a3b8] px-1 sm:px-2 py-1">생산3</td><td class="border border-[#94a3b8] w-3 sm:w-5 bg-[#93c5fd]"></td></tr>
                     </table>
-                    <table class="border-collapse border border-[#94a3b8] text-center shadow-sm">
-                        <tr><th colspan="4" class="border border-[#94a3b8] bg-white py-0.5 text-[11px] font-normal text-gray-600">업체별 구분</th></tr>
-                        <tr class="text-[11px]"><td class="border border-[#94a3b8] px-2 py-1">태극</td><td class="border border-[#94a3b8] w-5 bg-white"></td><td class="border border-[#94a3b8] w-5 bg-[#bfdbfe]"></td><td class="border border-[#94a3b8] w-5 bg-[#fef08a]"></td></tr>
-                        <tr class="text-[11px]"><td class="border border-[#94a3b8] px-2 py-1">유원</td><td class="border border-[#94a3b8] w-5 bg-white"></td><td class="border border-[#94a3b8] w-5 bg-[#fed7aa]"></td><td class="border border-[#94a3b8] w-5 bg-[#fef08a]"></td></tr>
+                    <table class="border-collapse border border-[#94a3b8] text-center shadow-sm flex-shrink-0">
+                        <tr><th colspan="4" class="border border-[#94a3b8] bg-white py-0.5 text-[10px] sm:text-[11px] font-normal text-gray-600">업체별 구분</th></tr>
+                        <tr class="text-[10px] sm:text-[11px]"><td class="border border-[#94a3b8] px-1 sm:px-2 py-1">태극</td><td class="border border-[#94a3b8] w-3 sm:w-5 bg-white"></td><td class="border border-[#94a3b8] w-3 sm:w-5 bg-[#bfdbfe]"></td><td class="border border-[#94a3b8] w-3 sm:w-5 bg-[#fef08a]"></td></tr>
+                        <tr class="text-[10px] sm:text-[11px]"><td class="border border-[#94a3b8] px-1 sm:px-2 py-1">유원</td><td class="border border-[#94a3b8] w-3 sm:w-5 bg-white"></td><td class="border border-[#94a3b8] w-3 sm:w-5 bg-[#fed7aa]"></td><td class="border border-[#94a3b8] w-3 sm:w-5 bg-[#fef08a]"></td></tr>
                     </table>
                 </div>
-                <table class="border-collapse border border-[#94a3b8] text-center shadow-sm text-[12px]">
-                    <tr><td class="bg-[#facc15] font-bold border border-[#94a3b8] px-6 py-1 text-gray-800">Update</td><td class="bg-[#facc15] border border-[#94a3b8] px-6 py-1 text-gray-800">최종 업데이트</td></tr>
-                    <tr><td class="text-blue-700 italic font-bold border border-[#94a3b8] px-6 py-1 bg-white">Today</td><td class="text-blue-700 border border-[#94a3b8] px-6 py-1 bg-white" id="todayDateStr">2026-11-03</td></tr>
+                
+                <table class="border-collapse border border-[#94a3b8] text-center shadow-sm text-xs sm:text-[13px] flex-shrink-0">
+                    <tr>
+                        <td class="bg-[#facc15] font-bold border border-[#94a3b8] px-3 sm:px-6 py-1 sm:py-1.5 text-gray-800">최종 업데이트</td>
+                        <td class="text-blue-700 font-bold border border-[#94a3b8] px-4 sm:px-8 py-1 sm:py-1.5 bg-white tracking-wider" id="lastUpdateStr">-</td>
+                    </tr>
                 </table>
             </div>
         </div>
@@ -128,36 +145,32 @@
             <table class="excel-table mx-auto bg-white" style="width: 100%;">
                 <thead class="sticky top-0 bg-[#f8fafc] z-10 shadow-sm">
                     <tr>
-                        <th colspan="13" class="border-b border-gray-300 bg-white"></th>
-                        <th colspan="5" class="text-blue-700 italic text-[12px] font-bold text-center py-1.5 border border-gray-300 bg-white">2026년 재고</th>
-                    </tr>
-                    <tr>
-                        <th class="excel-th w-10" rowspan="3">NO.</th>
+                        <th class="excel-th w-8 sm:w-10 cursor-pointer hover:bg-[#e2e8f0] transition" rowspan="3" onclick="sortTable('no')" title="클릭하여 정렬">NO. ↕</th>
                         <th class="excel-th" colspan="3">위치</th>
                         <th class="excel-th" colspan="6">품명</th>
-                        <th class="excel-th text-[#ea580c] w-16" rowspan="3">실물<br>재고</th>
-                        <th class="excel-th w-28" rowspan="3">비고</th>
-                        <th class="excel-th w-24" rowspan="3">비고2</th>
-                        <th class="excel-th text-blue-700 w-20" rowspan="3">현재<br>잔여량</th>
-                        <th class="excel-th text-blue-700 w-16" rowspan="3">출고<br>누계</th>
-                        <th class="excel-th text-blue-700 w-16" rowspan="3">외부<br>입고<br>누계</th>
-                        <th class="excel-th text-blue-700 w-16" rowspan="3">외부<br>반출<br>누계</th>
-                        <th class="excel-th text-red-600 w-16" rowspan="3">반입<br>누계</th>
+                        <th class="excel-th text-[#ea580c] w-12 sm:w-16" rowspan="3">실물<br>재고</th>
+                        <th class="excel-th w-20 sm:w-28" rowspan="3">비고</th>
+                        <th class="excel-th w-16 sm:w-24" rowspan="3">비고2</th>
+                        <th class="excel-th text-blue-700 w-16 sm:w-20" rowspan="3">현재<br>잔여량</th>
+                        <th class="excel-th text-blue-700 w-12 sm:w-16" rowspan="3">출고<br>누계</th>
+                        <th class="excel-th text-blue-700 w-12 sm:w-16" rowspan="3">외부<br>출고<br>누계<br>(사급)</th>
+                        <th class="excel-th text-red-600 w-12 sm:w-16" rowspan="3">반입<br>누계</th>
+                        <th class="excel-th text-blue-700 w-12 sm:w-16" rowspan="3">외부<br>입고<br>누계<br>(사급)</th>
                     </tr>
                     <tr>
-                        <th class="excel-th w-10 text-[11px]" rowspan="2">대</th>
-                        <th class="excel-th w-10 text-[11px]" rowspan="2">중</th>
-                        <th class="excel-th w-10 text-[11px]" rowspan="2">소</th>
+                        <th class="excel-th w-8 sm:w-10 text-[10px] sm:text-[11px] cursor-pointer hover:bg-[#e2e8f0] transition" rowspan="2" onclick="sortTable('loc1')" title="클릭하여 정렬">대 ↕</th>
+                        <th class="excel-th w-8 sm:w-10 text-[10px] sm:text-[11px] cursor-pointer hover:bg-[#e2e8f0] transition" rowspan="2" onclick="sortTable('loc2')" title="클릭하여 정렬">중 ↕</th>
+                        <th class="excel-th w-8 sm:w-10 text-[10px] sm:text-[11px] cursor-pointer hover:bg-[#e2e8f0] transition" rowspan="2" onclick="sortTable('loc3')" title="클릭하여 정렬">소 ↕</th>
                         <th class="excel-th" colspan="2">종류</th>
-                        <th class="excel-th w-40" rowspan="2">재질</th>
+                        <th class="excel-th w-28 sm:w-40 cursor-pointer hover:bg-[#e2e8f0] transition" rowspan="2" onclick="sortTable('material')" title="클릭하여 정렬">재질 ↕</th>
                         <th class="excel-th" colspan="3">규격</th>
                     </tr>
                     <tr>
-                        <th class="excel-th w-12 text-[11px]">강종</th>
-                        <th class="excel-th w-12 text-[11px]">비중</th>
-                        <th class="excel-th w-16 text-[11px]">두께<br>(mm)</th>
-                        <th class="excel-th w-16 text-[11px]">가로<br>(mm)</th>
-                        <th class="excel-th w-16 text-[11px]">세로<br>(mm)</th>
+                        <th class="excel-th w-10 sm:w-12 text-[10px] sm:text-[11px] cursor-pointer hover:bg-[#e2e8f0] transition" onclick="sortTable('steel')" title="클릭하여 정렬">강종 ↕</th>
+                        <th class="excel-th w-10 sm:w-12 text-[10px] sm:text-[11px]">비중</th>
+                        <th class="excel-th w-12 sm:w-16 text-[10px] sm:text-[11px]">두께<br>(mm)</th>
+                        <th class="excel-th w-12 sm:w-16 text-[10px] sm:text-[11px]">가로<br>(mm)</th>
+                        <th class="excel-th w-12 sm:w-16 text-[10px] sm:text-[11px]">세로<br>(mm)</th>
                     </tr>
                 </thead>
                 <tbody id="inventoryBody" class="bg-white">
@@ -168,21 +181,21 @@
     </div>
 
     <!-- 수정 모달 -->
-    <div id="editModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div id="editModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50">
         <div class="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[95vh]">
-            <div class="bg-gray-800 px-6 py-4 flex justify-between items-center"><h2 class="text-white font-bold text-lg">자재 상세 관리</h2></div>
-            <div class="p-5 overflow-y-auto space-y-4">
-                <p id="editTargetDesc" class="text-sm font-bold text-blue-600 mb-2 border-b pb-2"></p>
+            <div class="bg-gray-800 px-4 py-3 sm:px-6 sm:py-4 flex justify-between items-center"><h2 class="text-white font-bold text-base sm:text-lg">자재 상세 관리</h2></div>
+            <div class="p-3 sm:p-5 overflow-y-auto space-y-3 sm:space-y-4">
+                <p id="editTargetDesc" class="text-xs sm:text-sm font-bold text-blue-600 mb-1 sm:mb-2 border-b pb-2"></p>
                 
-                <div class="border rounded p-3 bg-gray-50 border-gray-300">
+                <div class="border rounded p-2 sm:p-3 bg-gray-50 border-gray-300">
                     <div class="flex justify-between items-center mb-2">
-                        <label class="font-bold text-gray-800">■ 위치 수정</label>
+                        <label class="font-bold text-gray-800 text-sm">■ 위치 수정</label>
                         <button onclick="saveLocation()" class="bg-indigo-600 text-white px-3 py-1 text-xs font-bold rounded shadow hover:bg-indigo-700 transition">위치만 저장</button>
                     </div>
                     
-                    <div id="zoneMap" class="w-full h-[200px] relative border-2 border-gray-800 rounded-sm mb-3 select-none overflow-hidden group">
-                        <label class="absolute top-2 left-2 bg-black bg-opacity-60 text-white px-2 py-1 text-[10px] rounded cursor-pointer hover:bg-opacity-90 z-20 transition opacity-0 group-hover:opacity-100">
-                            도면 배경 변경
+                    <div id="zoneMap" class="w-full h-[140px] sm:h-[200px] relative border-2 border-gray-800 rounded-sm mb-3 select-none overflow-hidden group">
+                        <label class="absolute top-1 left-1 sm:top-2 sm:left-2 bg-black bg-opacity-60 text-white px-2 py-1 text-[10px] rounded cursor-pointer hover:bg-opacity-90 z-20 transition opacity-0 group-hover:opacity-100">
+                            배경 변경
                             <input type="file" accept="image/*" class="hidden" onchange="changeMapBackground(event)">
                         </label>
                         <div id="defaultGreenBox" class="absolute top-0 right-0 w-[46%] h-[52%] bg-[#92c955] border-l-2 border-b-2 border-gray-800"></div>
@@ -195,121 +208,126 @@
                         <div class="zone-btn" style="bottom: 4%; right: 12%;" onclick="selectZone('20')">20</div><div class="zone-btn" style="bottom: 4%; right: 22%;" onclick="selectZone('21')">21</div><div class="zone-btn" style="bottom: 4%; right: 32%;" onclick="selectZone('22')">22</div><div class="zone-btn" style="bottom: 4%; right: 42%;" onclick="selectZone('23')">23</div>
                     </div>
                     <div class="grid grid-cols-3 gap-2">
-                        <div><label class="block text-xs font-bold text-gray-700 mb-1">위치 (대: 구역)</label><input type="text" id="editLoc1" class="w-full border rounded p-1.5 text-sm bg-yellow-50 font-bold text-center" placeholder="선택됨"></div>
-                        <div><label class="block text-xs font-bold text-gray-700 mb-1">위치 (중)</label><input type="text" id="editLoc2" class="w-full border rounded p-1.5 text-sm text-center" placeholder="수기입력"></div>
-                        <div><label class="block text-xs font-bold text-gray-700 mb-1">위치 (소)</label><input type="text" id="editLoc3" class="w-full border rounded p-1.5 text-sm text-center" placeholder="수기입력"></div>
+                        <div><label class="block text-[10px] sm:text-xs font-bold text-gray-700 mb-1">대(구역)</label><input type="text" id="editLoc1" class="w-full border rounded p-1.5 text-xs sm:text-sm bg-yellow-50 font-bold text-center" placeholder="선택됨"></div>
+                        <div><label class="block text-[10px] sm:text-xs font-bold text-gray-700 mb-1">중</label><input type="text" id="editLoc2" class="w-full border rounded p-1.5 text-xs sm:text-sm text-center" placeholder="입력"></div>
+                        <div><label class="block text-[10px] sm:text-xs font-bold text-gray-700 mb-1">소</label><input type="text" id="editLoc3" class="w-full border rounded p-1.5 text-xs sm:text-sm text-center" placeholder="입력"></div>
                     </div>
                 </div>
 
-                <div class="border rounded p-3 bg-red-50 border-red-200">
+                <div class="border rounded p-2 sm:p-3 bg-red-50 border-red-200">
                     <div class="flex justify-between items-center mb-2">
-                        <label class="font-bold text-red-800">■ 수량 변경 (강제 조정)</label>
+                        <label class="font-bold text-red-800 text-sm">■ 수량 변경 (강제 조정)</label>
                         <button onclick="saveQuantity()" class="bg-red-600 text-white px-3 py-1 text-xs font-bold rounded shadow hover:bg-red-700 transition">수량만 저장</button>
                     </div>
-                    <input type="number" id="editQty" class="w-full border border-red-300 rounded p-1.5 font-bold text-red-600 text-lg text-center">
+                    <input type="number" id="editQty" class="w-full border border-red-300 rounded p-1.5 font-bold text-red-600 text-base sm:text-lg text-center">
                 </div>
 
-                <div class="grid grid-cols-2 gap-3 border-t pt-4 mt-2 border-gray-300">
-                    <button onclick="openInboundFromEdit()" class="py-3 bg-blue-100 text-blue-800 font-bold rounded shadow-sm border border-blue-300 hover:bg-blue-200 transition">입고증 작성</button>
-                    <button onclick="openOutboundFromEdit()" class="py-3 bg-red-100 text-red-800 font-bold rounded shadow-sm border border-red-300 hover:bg-red-200 transition">출고증 작성</button>
+                <div class="grid grid-cols-2 gap-2 sm:gap-3 border-t pt-3 sm:pt-4 mt-1 border-gray-300">
+                    <button onclick="openInboundFromEdit()" class="py-2.5 sm:py-3 bg-blue-100 text-blue-800 text-sm sm:text-base font-bold rounded shadow-sm border border-blue-300 hover:bg-blue-200 transition">입고증 작성</button>
+                    <button onclick="openOutboundFromEdit()" class="py-2.5 sm:py-3 bg-red-100 text-red-800 text-sm sm:text-base font-bold rounded shadow-sm border border-red-300 hover:bg-red-200 transition">출고증 작성</button>
                 </div>
                 
-                <div class="flex justify-end pt-2">
-                    <button onclick="closeModal('editModal')" class="px-5 py-2 border border-gray-400 rounded text-gray-700 bg-gray-100 hover:bg-gray-200 font-bold shadow-sm">닫기</button>
+                <div class="flex justify-end pt-1 sm:pt-2">
+                    <button onclick="closeModal('editModal')" class="px-4 sm:px-5 py-1.5 sm:py-2 border border-gray-400 rounded text-gray-700 bg-gray-100 hover:bg-gray-200 text-sm font-bold shadow-sm">닫기</button>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- 입고증 작성 모달 -->
-    <div id="inboundModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div id="inboundModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50">
         <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
-            <div class="bg-blue-600 px-6 py-4 flex justify-between items-center"><h2 class="text-white font-bold text-lg">입고증 작성</h2></div>
-            <div class="p-6 space-y-4">
-                <div class="grid grid-cols-2 gap-4">
+            <div class="bg-blue-600 px-4 py-3 sm:px-6 sm:py-4 flex justify-between items-center"><h2 class="text-white font-bold text-base sm:text-lg">입고증 작성</h2></div>
+            <div class="p-4 sm:p-6 space-y-3 sm:space-y-4 max-h-[85vh] overflow-y-auto">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <div>
-                        <label class="block text-sm font-bold text-gray-700 mb-1">입고 유형</label>
-                        <select id="inboundType" class="w-full border rounded p-2 bg-blue-50 text-blue-800 font-bold text-center">
-                            <option value="입고">기본 입고</option>
-                            <option value="외부입고">외부 입고</option>
+                        <label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">입고 유형</label>
+                        <select id="inboundType" class="w-full border rounded p-1.5 sm:p-2 bg-blue-50 text-blue-800 font-bold text-center text-sm">
                             <option value="반입">반입</option>
+                            <option value="외부 입고">외부 입고</option>
                         </select>
                     </div>
-                    <div><label class="block text-sm font-bold text-gray-700 mb-1">입고 날짜</label><input type="date" id="inDate" class="w-full border rounded p-2 text-center"></div>
+                    <div><label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">입고 날짜</label><input type="date" id="inDate" class="w-full border rounded p-1.5 sm:p-2 text-center text-sm"></div>
                 </div>
 
-                <div class="border-t pt-3 mt-1">
-                    <label class="block text-sm font-bold text-gray-700 mb-1">강종 (선택)</label>
-                    <select id="inSteelType" class="w-full border rounded p-2 text-center" onchange="autoFillGravity()">
-                        <option value="">선택</option>
-                        <option value="GA" data-grav="8.15">GA</option>
-                        <option value="ST" data-grav="7.85">ST (Steel)</option>
-                        <option value="GI" data-grav="7.85">GI</option>
-                        <option value="AL" data-grav="2.7">AL (알루미늄)</option>
-                    </select>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 border-t pt-2 sm:pt-3 mt-1">
+                    <div>
+                        <label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">강종 (선택)</label>
+                        <select id="inSteelType" class="w-full border rounded p-1.5 sm:p-2 text-center text-sm" onchange="autoFillGravity()">
+                            <option value="">선택</option>
+                            <option value="GA" data-grav="8.15">GA</option>
+                            <option value="ST" data-grav="7.85">ST (Steel)</option>
+                            <option value="GI" data-grav="7.85">GI</option>
+                            <option value="AL" data-grav="2.7">AL (알루미늄)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">구매 업체</label>
+                        <input type="text" id="inCompany" class="w-full border rounded p-1.5 sm:p-2 text-center text-sm" placeholder="업체명 입력">
+                    </div>
                 </div>
                 
-                <div class="grid grid-cols-2 gap-4">
-                    <div><label class="block text-sm font-bold text-gray-700 mb-1">비중</label><input type="text" id="inGravity" class="w-full border rounded p-2 bg-gray-100 text-center" readonly></div>
-                    <div><label class="block text-sm font-bold text-gray-700 mb-1">재질</label><input type="text" id="inMaterial" class="w-full border rounded p-2 text-center" placeholder="직접 입력"></div>
-                    <div><label class="block text-sm font-bold text-gray-700 mb-1">두께 (mm)</label><input type="number" step="0.1" id="inThickness" class="w-full border rounded p-2 text-center"></div>
-                    <div><label class="block text-sm font-bold text-gray-700 mb-1">입고 수량</label><input type="number" id="inQty" class="w-full border rounded p-2 text-blue-600 font-bold text-center"></div>
-                    <div><label class="block text-sm font-bold text-gray-700 mb-1">가로 (mm)</label><input type="number" id="inWidth" class="w-full border rounded p-2 text-center"></div>
-                    <div><label class="block text-sm font-bold text-gray-700 mb-1">세로 (mm)</label><input type="number" id="inHeight" class="w-full border rounded p-2 text-center"></div>
+                <div class="grid grid-cols-2 gap-3 sm:gap-4">
+                    <div><label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">비중</label><input type="text" id="inGravity" class="w-full border rounded p-1.5 sm:p-2 bg-gray-100 text-center text-sm" readonly></div>
+                    <div><label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">재질</label><input type="text" id="inMaterial" class="w-full border rounded p-1.5 sm:p-2 text-center text-sm" placeholder="직접 입력"></div>
+                    <div><label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">두께 (mm)</label><input type="number" step="0.1" id="inThickness" class="w-full border rounded p-1.5 sm:p-2 text-center text-sm"></div>
+                    <div><label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">입고 수량</label><input type="number" id="inQty" class="w-full border rounded p-1.5 sm:p-2 text-blue-600 font-bold text-center text-sm"></div>
+                    <div><label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">가로 (mm)</label><input type="number" id="inWidth" class="w-full border rounded p-1.5 sm:p-2 text-center text-sm"></div>
+                    <div><label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">세로 (mm)</label><input type="number" id="inHeight" class="w-full border rounded p-1.5 sm:p-2 text-center text-sm"></div>
                     
-                    <div><label class="block text-sm font-bold text-gray-700 mb-1">비고</label><input type="text" id="inNote" class="w-full border rounded p-2 text-center"></div>
-                    <div><label class="block text-sm font-bold text-gray-700 mb-1">비고2</label><input type="text" id="inNote2" class="w-full border rounded p-2 text-center"></div>
+                    <div class="col-span-2 sm:col-span-1"><label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">비고</label><input type="text" id="inNote" class="w-full border rounded p-1.5 sm:p-2 text-center text-sm"></div>
+                    <div class="col-span-2 sm:col-span-1"><label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">비고2</label><input type="text" id="inNote2" class="w-full border rounded p-1.5 sm:p-2 text-center text-sm"></div>
                 </div>
                 
-                <div class="flex justify-end gap-2 mt-4">
-                    <button onclick="closeModal('inboundModal')" class="px-4 py-2 border rounded text-gray-600 hover:bg-gray-100 font-bold">취소</button>
-                    <button onclick="processInbound()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold shadow-md">입고 처리</button>
+                <div class="flex justify-end gap-2 mt-3 sm:mt-4">
+                    <button onclick="closeModal('inboundModal')" class="px-3 sm:px-4 py-1.5 sm:py-2 border rounded text-gray-600 hover:bg-gray-100 text-sm font-bold">취소</button>
+                    <button onclick="processInbound()" class="px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-bold shadow-md">입고 처리</button>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- 출고증 작성 모달 -->
-    <div id="outboundModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
-            <div class="bg-red-600 px-6 py-4 flex justify-between items-center"><h2 class="text-white font-bold text-lg">출고증 작성</h2></div>
-            <div class="p-6 overflow-y-auto space-y-4">
-                <div class="grid grid-cols-2 gap-4">
+    <div id="outboundModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[95vh]">
+            <div class="bg-red-600 px-4 py-3 sm:px-6 sm:py-4 flex justify-between items-center"><h2 class="text-white font-bold text-base sm:text-lg">출고증 작성</h2></div>
+            <div class="p-4 sm:p-6 overflow-y-auto space-y-3 sm:space-y-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <div>
-                        <label class="block text-sm font-bold text-gray-700 mb-1">출고 유형</label>
-                        <select id="outboundType" class="w-full border rounded p-2 bg-red-50 text-red-800 font-bold text-center">
-                            <option value="출고">기본 출고</option>
-                            <option value="외부반출">외부 반출</option>
+                        <label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">출고 유형</label>
+                        <select id="outboundType" class="w-full border rounded p-1.5 sm:p-2 bg-red-50 text-red-800 font-bold text-center text-sm">
+                            <option value="출고">출고</option>
+                            <option value="외부 출고">외부 출고</option>
                         </select>
                     </div>
-                    <div><label class="block text-sm font-bold text-gray-700 mb-1">출고 날짜</label><input type="date" id="outDate" class="w-full border rounded p-2 text-center"></div>
+                    <div><label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">출고 날짜</label><input type="date" id="outDate" class="w-full border rounded p-1.5 sm:p-2 text-center text-sm"></div>
                 </div>
 
-                <div class="bg-gray-50 p-3 rounded border border-gray-200 text-xs text-gray-600">
-                    <p class="font-bold text-blue-700 mb-1">※ 재질 -> 두께 -> 가로 -> 세로 순차 검색</p>
-                    <div class="grid grid-cols-2 gap-2 mt-2">
-                        <div><label class="font-bold">재질</label><input list="outMatList" id="outMaterial" class="w-full border rounded p-1.5 text-center" oninput="updateThicknessList()" placeholder="입력/선택"><datalist id="outMatList"></datalist></div>
-                        <div><label class="font-bold">두께</label><input list="outThkList" id="outThickness" class="w-full border rounded p-1.5 text-center" oninput="updateWidthList()" placeholder="입력/선택"><datalist id="outThkList"></datalist></div>
-                        <div><label class="font-bold">가로</label><input list="outWidList" id="outWidth" class="w-full border rounded p-1.5 text-center" oninput="updateHeightList()" placeholder="입력/선택"><datalist id="outWidList"></datalist></div>
-                        <div><label class="font-bold">세로</label><input list="outHgtList" id="outHeight" class="w-full border rounded p-1.5 text-center" oninput="checkCurrentStock()" placeholder="입력/선택"><datalist id="outHgtList"></datalist></div>
+                <div class="bg-gray-50 p-2 sm:p-3 rounded border border-gray-200 text-xs text-gray-600">
+                    <p class="font-bold text-blue-700 mb-1 text-[11px] sm:text-xs">※ 재질 -> 두께 -> 가로 -> 세로 순차 검색</p>
+                    <div class="grid grid-cols-2 gap-2 mt-1 sm:mt-2">
+                        <div><label class="font-bold">재질</label><input list="outMatList" id="outMaterial" class="w-full border rounded p-1 sm:p-1.5 text-center text-sm" oninput="updateThicknessList()" placeholder="선택"><datalist id="outMatList"></datalist></div>
+                        <div><label class="font-bold">두께</label><input list="outThkList" id="outThickness" class="w-full border rounded p-1 sm:p-1.5 text-center text-sm" oninput="updateWidthList()" placeholder="선택"><datalist id="outThkList"></datalist></div>
+                        <div><label class="font-bold">가로</label><input list="outWidList" id="outWidth" class="w-full border rounded p-1 sm:p-1.5 text-center text-sm" oninput="updateHeightList()" placeholder="선택"><datalist id="outWidList"></datalist></div>
+                        <div><label class="font-bold">세로</label><input list="outHgtList" id="outHeight" class="w-full border rounded p-1 sm:p-1.5 text-center text-sm" oninput="checkCurrentStock()" placeholder="선택"><datalist id="outHgtList"></datalist></div>
                     </div>
                 </div>
                 
-                <div class="bg-gray-100 p-2 rounded text-sm flex justify-between items-center"><span class="font-bold text-gray-700">현재 자재 재고:</span><span id="currentStockDisplay" class="font-bold text-lg text-red-600">0 개</span></div>
+                <div class="bg-gray-100 p-2 rounded text-xs sm:text-sm flex justify-between items-center"><span class="font-bold text-gray-700">현재 자재 재고:</span><span id="currentStockDisplay" class="font-bold text-base sm:text-lg text-red-600">0 개</span></div>
                 
-                <div><label class="block text-sm font-bold text-gray-700 mb-1">출고 수량</label><input type="number" id="outQty" class="w-full border border-red-300 rounded p-2 text-red-600 font-bold bg-red-50 text-lg text-center" placeholder="수량 입력"></div>
+                <div><label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">출고 수량</label><input type="number" id="outQty" class="w-full border border-red-300 rounded p-1.5 sm:p-2 text-red-600 font-bold bg-red-50 text-base sm:text-lg text-center" placeholder="수량 입력"></div>
                 
-                <div class="border-t pt-3 mt-3 grid grid-cols-2 gap-2">
+                <div class="border-t pt-2 sm:pt-3 mt-2 sm:mt-3 grid grid-cols-2 gap-2">
                     <div class="col-span-2"><label class="block text-xs font-bold text-gray-700 mb-1">출고 부서/공정</label>
-                        <input list="deptList" id="outDept" class="w-full border rounded p-2 text-sm text-center" placeholder="신규사업부, 프레스, 레이저 등">
+                        <input list="deptList" id="outDept" class="w-full border rounded p-1.5 sm:p-2 text-sm text-center" placeholder="신규사업부, 프레스 등">
                         <datalist id="deptList"><option value="신규사업부"><option value="프레스"><option value="개발"><option value="조립"><option value="레이저"><option value="선행"><option value="생산3"></datalist>
                     </div>
                     <div><label class="block text-xs font-bold text-gray-700 mb-1">담당자 이름</label>
-                        <input list="empList" id="outEmp" class="w-full border rounded p-2 text-sm text-center" placeholder="이원찬, 김종성 등">
+                        <input list="empList" id="outEmp" class="w-full border rounded p-1.5 sm:p-2 text-sm text-center" placeholder="이원찬 등">
                         <datalist id="empList"><option value="이원찬"><option value="김종성"><option value="최옥경"></datalist>
                     </div>
                     <div><label class="block text-xs font-bold text-gray-700 mb-1">프로젝트명</label>
-                        <input list="projectList" id="outProject" class="w-full border rounded p-2 text-sm text-center" placeholder="프로젝트 번호 입력">
+                        <input list="projectList" id="outProject" class="w-full border rounded p-1.5 sm:p-2 text-sm text-center" placeholder="프로젝트 번호">
                         <datalist id="projectList">
                             <option value="RS-2024-00421213">
                             <option value="RS-2024-00420754">
@@ -317,163 +335,294 @@
                     </div>
                 </div>
 
-                <div class="flex justify-end gap-2 mt-4 pt-2">
-                    <button onclick="closeModal('outboundModal')" class="px-4 py-2 border rounded text-gray-600 hover:bg-gray-100 font-bold">취소</button>
-                    <button onclick="processOutbound()" class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 font-bold shadow-md">출고 요청</button>
+                <div class="flex justify-end gap-2 mt-3 sm:mt-4 pt-1 sm:pt-2">
+                    <button onclick="closeModal('outboundModal')" class="px-3 sm:px-4 py-1.5 sm:py-2 border rounded text-gray-600 hover:bg-gray-100 text-sm font-bold">취소</button>
+                    <button onclick="processOutbound()" class="px-3 sm:px-4 py-1.5 sm:py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm font-bold shadow-md">출고 요청</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 입고증/출고증 수정 통합 모달 -->
+    <div id="editReceiptModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-[70]">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+            <div class="bg-gray-700 px-4 py-3 sm:px-6 sm:py-4 flex justify-between items-center">
+                <h2 class="text-white font-bold text-base sm:text-lg">기록 내역 수정</h2>
+            </div>
+            <div class="p-4 sm:p-6 space-y-3 sm:space-y-4 max-h-[85vh] overflow-y-auto">
+                <input type="hidden" id="editReceiptLogId">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                    <div>
+                        <label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">수정할 날짜</label>
+                        <input type="date" id="editReceiptDate" class="w-full border rounded p-1.5 sm:p-2 text-center text-sm font-bold text-blue-700">
+                    </div>
+                    <div>
+                        <label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">수량</label>
+                        <input type="number" id="editReceiptQty" class="w-full border rounded p-1.5 sm:p-2 text-center text-sm font-bold text-red-600">
+                    </div>
+                    <div>
+                        <label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">재질 (수정불가)</label>
+                        <input type="text" id="editReceiptMat" class="w-full border rounded p-1.5 sm:p-2 text-center text-xs bg-gray-100" readonly>
+                    </div>
+                </div>
+
+                <div id="editReceiptInFields" class="hidden space-y-3 sm:space-y-4">
+                    <div class="border-t pt-2 sm:pt-3">
+                        <label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">구매 업체</label>
+                        <input type="text" id="editReceiptCompany" class="w-full border rounded p-1.5 sm:p-2 text-center text-sm">
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 sm:gap-4">
+                        <div>
+                            <label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">비고</label>
+                            <input type="text" id="editReceiptNote" class="w-full border rounded p-1.5 sm:p-2 text-center text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">비고2</label>
+                            <input type="text" id="editReceiptNote2" class="w-full border rounded p-1.5 sm:p-2 text-center text-sm">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="editReceiptOutFields" class="hidden space-y-3 sm:space-y-4">
+                    <div class="border-t pt-2 sm:pt-3 grid grid-cols-2 gap-3 sm:gap-4">
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-gray-700 mb-1">출고 부서/공정</label>
+                            <input list="deptList" id="editReceiptDept" class="w-full border rounded p-1.5 sm:p-2 text-sm text-center">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-700 mb-1">담당자 이름</label>
+                            <input list="empList" id="editReceiptEmp" class="w-full border rounded p-1.5 sm:p-2 text-sm text-center">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-700 mb-1">프로젝트명</label>
+                            <input list="projectList" id="editReceiptProject" class="w-full border rounded p-1.5 sm:p-2 text-sm text-center">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 mt-3 sm:mt-4">
+                    <button onclick="closeModal('editReceiptModal')" class="px-3 sm:px-4 py-1.5 sm:py-2 border rounded text-gray-600 hover:bg-gray-100 text-sm font-bold">취소</button>
+                    <button onclick="saveReceiptEdit()" class="px-3 sm:px-4 py-1.5 sm:py-2 bg-gray-800 text-white rounded hover:bg-black text-sm font-bold shadow-md">변경사항 저장</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- 입고증 인쇄/복사 모달 (리스트 클릭 열람용) -->
+    <div id="printInboundModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-[60]">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[95vh]">
+            <div class="p-4 sm:p-8 overflow-y-auto flex-grow print-area bg-white" id="inboundPrintArea">
+                <h2 class="text-xl sm:text-3xl font-extrabold text-center mb-4 sm:mb-6 border-b-2 sm:border-b-4 border-gray-800 pb-2 sm:pb-4 tracking-widest">원 자 재 입 고 증</h2>
+                <div class="flex flex-col sm:flex-row justify-between sm:items-end mb-4 gap-2">
+                    <div class="text-xs sm:text-sm font-bold text-gray-700">입고 일자: <span id="prtInDate" class="text-blue-700"></span></div>
+                    <table class="border-collapse border border-gray-600 text-center shadow-sm text-xs sm:text-sm">
+                        <tr><th class="border border-gray-600 bg-gray-100 px-2 sm:px-3 py-1">담당</th><th class="border border-gray-600 bg-gray-100 px-2 sm:px-3 py-1">팀장</th><th class="border border-gray-600 bg-gray-100 px-2 sm:px-3 py-1">승인</th></tr>
+                        <tr><td class="border border-gray-600 px-2 sm:px-4 py-2 h-10 sm:h-14"></td><td class="border border-gray-600 px-2 sm:px-4 py-2 h-10 sm:h-14"></td><td class="border border-gray-600 px-2 sm:px-4 py-2 h-10 sm:h-14"></td></tr>
+                    </table>
+                </div>
+
+                <table class="w-full border-collapse border sm:border-2 border-gray-800 text-xs sm:text-sm mb-4 sm:mb-6 text-center">
+                    <tr class="bg-gray-100 font-bold">
+                        <th class="border border-gray-600 py-1.5 sm:py-2 w-1/4">입고 유형</th>
+                        <th class="border border-gray-600 py-1.5 sm:py-2 w-1/4">구매 업체</th>
+                        <th class="border border-gray-600 py-1.5 sm:py-2 w-1/4">비고</th>
+                        <th class="border border-gray-600 py-1.5 sm:py-2 w-1/4">비고2</th>
+                    </tr>
+                    <tr>
+                        <td class="border border-gray-600 py-2 sm:py-3" id="prtInType"></td>
+                        <td class="border border-gray-600 py-2 sm:py-3" id="prtInCompany"></td>
+                        <td class="border border-gray-600 py-2 sm:py-3" id="prtInNote"></td>
+                        <td class="border border-gray-600 py-2 sm:py-3" id="prtInNote2"></td>
+                    </tr>
+                </table>
+
+                <table class="w-full border-collapse border sm:border-2 border-gray-800 text-xs sm:text-sm text-center">
+                    <tr class="bg-gray-100 font-bold">
+                        <th class="border border-gray-600 py-1.5 sm:py-2 w-1/4">재질</th>
+                        <th class="border border-gray-600 py-1.5 sm:py-2 w-1/4">규격(T x W x H)</th>
+                        <th class="border border-gray-600 py-1.5 sm:py-2 w-1/4">입고 수량</th>
+                        <th class="border border-gray-600 py-1.5 sm:py-2 w-1/4">작성당시 잔여량</th>
+                    </tr>
+                    <tr>
+                        <td class="border border-gray-600 py-2 sm:py-4 font-bold" id="prtInMaterial"></td>
+                        <td class="border border-gray-600 py-2 sm:py-4" id="prtInSpec"></td>
+                        <td class="border border-gray-600 py-2 sm:py-4 font-bold text-blue-600 text-sm sm:text-lg" id="prtInQty"></td>
+                        <td class="border border-gray-600 py-2 sm:py-4 font-bold text-gray-700" id="prtInRemain"></td>
+                    </tr>
+                </table>
+            </div>
+            
+            <div class="bg-gray-100 p-3 sm:p-4 border-t border-gray-300 flex flex-wrap justify-end gap-2 sm:gap-3 no-print">
+                <button onclick="captureImage('inboundPrintArea')" class="bg-indigo-600 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded shadow hover:bg-indigo-700 transition text-xs sm:text-sm font-bold">이미지로 복사</button>
+                <button onclick="window.print()" class="bg-blue-600 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded shadow hover:bg-blue-700 transition text-xs sm:text-sm font-bold">입고증 인쇄</button>
+                <button onclick="closeModal('printInboundModal')" class="bg-gray-500 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded shadow hover:bg-gray-600 transition text-xs sm:text-sm font-bold">닫기</button>
             </div>
         </div>
     </div>
 
     <!-- 출고증 인쇄/복사 모달 -->
-    <div id="printOutboundModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden flex flex-col">
-            <div class="p-8 flex-grow print-area bg-white" id="outboundPrintArea">
-                <h2 class="text-3xl font-extrabold text-center mb-6 border-b-4 border-gray-800 pb-4 tracking-widest">원 자 재 출 고 증</h2>
-                <div class="flex justify-between items-end mb-4">
-                    <div class="text-sm font-bold text-gray-700">출고 일자: <span id="prtOutDate" class="text-blue-700"></span></div>
-                    <table class="border-collapse border border-gray-600 text-center shadow-sm text-sm">
-                        <tr><th class="border border-gray-600 bg-gray-100 px-3 py-1">담당</th><th class="border border-gray-600 bg-gray-100 px-3 py-1">팀장</th><th class="border border-gray-600 bg-gray-100 px-3 py-1">승인</th></tr>
-                        <tr><td class="border border-gray-600 px-4 py-3 h-14"></td><td class="border border-gray-600 px-4 py-3 h-14"></td><td class="border border-gray-600 px-4 py-3 h-14"></td></tr>
+    <div id="printOutboundModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-[60]">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[95vh]">
+            <div class="p-4 sm:p-8 overflow-y-auto flex-grow print-area bg-white" id="outboundPrintArea">
+                <h2 class="text-xl sm:text-3xl font-extrabold text-center mb-4 sm:mb-6 border-b-2 sm:border-b-4 border-gray-800 pb-2 sm:pb-4 tracking-widest">원 자 재 출 고 증</h2>
+                <div class="flex flex-col sm:flex-row justify-between sm:items-end mb-4 gap-2">
+                    <div class="text-xs sm:text-sm font-bold text-gray-700">출고 일자: <span id="prtOutDate" class="text-blue-700"></span></div>
+                    <table class="border-collapse border border-gray-600 text-center shadow-sm text-xs sm:text-sm">
+                        <tr><th class="border border-gray-600 bg-gray-100 px-2 sm:px-3 py-1">담당</th><th class="border border-gray-600 bg-gray-100 px-2 sm:px-3 py-1">팀장</th><th class="border border-gray-600 bg-gray-100 px-2 sm:px-3 py-1">승인</th></tr>
+                        <tr><td class="border border-gray-600 px-2 sm:px-4 py-2 h-10 sm:h-14"></td><td class="border border-gray-600 px-2 sm:px-4 py-2 h-10 sm:h-14"></td><td class="border border-gray-600 px-2 sm:px-4 py-2 h-10 sm:h-14"></td></tr>
                     </table>
                 </div>
 
-                <table class="w-full border-collapse border-2 border-gray-800 text-sm mb-6 text-center">
+                <table class="w-full border-collapse border sm:border-2 border-gray-800 text-sm mb-4 sm:mb-6 text-center">
                     <tr class="bg-gray-100 font-bold">
-                        <th class="border border-gray-600 py-2">출고 유형</th>
-                        <th class="border border-gray-600 py-2">부서/공정</th>
-                        <th class="border border-gray-600 py-2">담당자</th>
-                        <th class="border border-gray-600 py-2">프로젝트명</th>
+                        <th class="border border-gray-600 py-1.5 sm:py-2">출고 유형</th>
+                        <th class="border border-gray-600 py-1.5 sm:py-2">부서/공정</th>
+                        <th class="border border-gray-600 py-1.5 sm:py-2">담당자</th>
+                        <th class="border border-gray-600 py-1.5 sm:py-2">프로젝트명</th>
                     </tr>
                     <tr>
-                        <td class="border border-gray-600 py-3" id="prtOutType"></td>
-                        <td class="border border-gray-600 py-3" id="prtOutDept"></td>
-                        <td class="border border-gray-600 py-3" id="prtOutEmp"></td>
-                        <td class="border border-gray-600 py-3" id="prtOutProject"></td>
+                        <td class="border border-gray-600 py-2 sm:py-3" id="prtOutType"></td>
+                        <td class="border border-gray-600 py-2 sm:py-3" id="prtOutDept"></td>
+                        <td class="border border-gray-600 py-2 sm:py-3" id="prtOutEmp"></td>
+                        <td class="border border-gray-600 py-2 sm:py-3" id="prtOutProject"></td>
                     </tr>
                 </table>
 
-                <table class="w-full border-collapse border-2 border-gray-800 text-sm text-center">
+                <table class="w-full border-collapse border sm:border-2 border-gray-800 text-xs sm:text-sm text-center">
                     <tr class="bg-gray-100 font-bold">
-                        <th class="border border-gray-600 py-2 w-1/4">재질</th>
-                        <th class="border border-gray-600 py-2 w-1/4">규격(T x W x H)</th>
-                        <th class="border border-gray-600 py-2 w-1/4">출고 수량</th>
-                        <th class="border border-gray-600 py-2 w-1/4">출고 후 잔여량</th>
+                        <th class="border border-gray-600 py-1.5 sm:py-2 w-1/4">재질</th>
+                        <th class="border border-gray-600 py-1.5 sm:py-2 w-1/4">규격(T x W x H)</th>
+                        <th class="border border-gray-600 py-1.5 sm:py-2 w-1/4">출고 수량</th>
+                        <th class="border border-gray-600 py-1.5 sm:py-2 w-1/4">작성당시 잔여량</th>
                     </tr>
                     <tr>
-                        <td class="border border-gray-600 py-4 font-bold" id="prtOutMaterial"></td>
-                        <td class="border border-gray-600 py-4" id="prtOutSpec"></td>
-                        <td class="border border-gray-600 py-4 font-bold text-red-600 text-lg" id="prtOutQty"></td>
-                        <td class="border border-gray-600 py-4 font-bold text-blue-700" id="prtOutRemain"></td>
+                        <td class="border border-gray-600 py-2 sm:py-4 font-bold" id="prtOutMaterial"></td>
+                        <td class="border border-gray-600 py-2 sm:py-4" id="prtOutSpec"></td>
+                        <td class="border border-gray-600 py-2 sm:py-4 font-bold text-red-600 text-sm sm:text-lg" id="prtOutQty"></td>
+                        <td class="border border-gray-600 py-2 sm:py-4 font-bold text-gray-700" id="prtOutRemain"></td>
                     </tr>
                 </table>
-                <div class="mt-4 border-2 border-gray-800 p-3 min-h-[80px]">
-                    <span class="font-bold text-sm block mb-1">■ 비고 및 확인사항</span>
-                    <div class="content-box text-left" contenteditable="true">특이사항 없음</div>
+                <div class="mt-3 sm:mt-4 border sm:border-2 border-gray-800 p-2 sm:p-3 min-h-[60px] sm:min-h-[80px]">
+                    <span class="font-bold text-xs sm:text-sm block mb-1">■ 비고 및 확인사항</span>
+                    <div class="content-box text-left text-xs sm:text-sm border-none" contenteditable="true">특이사항 없음</div>
                 </div>
             </div>
             
-            <div class="bg-gray-100 p-4 border-t border-gray-300 flex justify-end gap-3 no-print">
-                <button onclick="captureImage('outboundPrintArea')" class="bg-indigo-600 text-white px-5 py-2 rounded shadow hover:bg-indigo-700 transition font-bold">이미지로 복사</button>
-                <button onclick="window.print()" class="bg-blue-600 text-white px-5 py-2 rounded shadow hover:bg-blue-700 transition font-bold">출고증 인쇄</button>
-                <button onclick="closeModal('printOutboundModal')" class="bg-red-500 text-white px-5 py-2 rounded shadow hover:bg-red-600 transition font-bold">닫기</button>
+            <div class="bg-gray-100 p-3 sm:p-4 border-t border-gray-300 flex flex-wrap justify-end gap-2 sm:gap-3 no-print">
+                <button onclick="captureImage('outboundPrintArea')" class="bg-indigo-600 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded shadow hover:bg-indigo-700 transition text-xs sm:text-sm font-bold">이미지로 복사</button>
+                <button onclick="window.print()" class="bg-blue-600 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded shadow hover:bg-blue-700 transition text-xs sm:text-sm font-bold">출고증 인쇄</button>
+                <button onclick="closeModal('printOutboundModal')" class="bg-gray-500 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded shadow hover:bg-gray-600 transition text-xs sm:text-sm font-bold">닫기</button>
             </div>
         </div>
     </div>
 
     <!-- 원자재 구매 요청서 모달 -->
-    <div id="purchaseModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden flex flex-col">
-            <div class="p-8 flex-grow print-area bg-white" id="purchasePrintArea">
-                <h2 class="text-3xl font-extrabold text-center mb-8 border-b-4 border-gray-800 pb-4 tracking-widest">원자재 구매 요청서</h2>
+    <div id="purchaseModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-[60]">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[95vh]">
+            <div class="p-4 sm:p-8 overflow-y-auto flex-grow print-area bg-white" id="purchasePrintArea">
+                <h2 class="text-xl sm:text-3xl font-extrabold text-center mb-4 sm:mb-8 border-b-2 sm:border-b-4 border-gray-800 pb-2 sm:pb-4 tracking-widest">원자재 구매 요청서</h2>
                 
-                <div class="flex justify-end mb-6 text-sm text-center font-bold">
+                <div class="flex justify-end mb-4 sm:mb-6 text-xs sm:text-sm text-center font-bold">
                     <table class="border-collapse border border-gray-600 shadow-sm">
-                        <tr><th class="border border-gray-600 bg-gray-100 px-4 py-1 w-20">작성자</th><th class="border border-gray-600 bg-gray-100 px-4 py-1 w-20">담당자</th><th class="border border-gray-600 bg-gray-100 px-4 py-1 w-20">승인</th></tr>
-                        <tr><td class="border border-gray-600 px-4 py-4 h-16"></td><td class="border border-gray-600 px-4 py-4 h-16"></td><td class="border border-gray-600 px-4 py-4 h-16"></td></tr>
+                        <tr><th class="border border-gray-600 bg-gray-100 px-2 sm:px-4 py-1 w-16 sm:w-20">작성자</th><th class="border border-gray-600 bg-gray-100 px-2 sm:px-4 py-1 w-16 sm:w-20">담당자</th><th class="border border-gray-600 bg-gray-100 px-2 sm:px-4 py-1 w-16 sm:w-20">승인</th></tr>
+                        <tr><td class="border border-gray-600 px-2 sm:px-4 py-2 sm:py-4 h-10 sm:h-16"></td><td class="border border-gray-600 px-2 sm:px-4 py-2 sm:py-4 h-10 sm:h-16"></td><td class="border border-gray-600 px-2 sm:px-4 py-2 sm:py-4 h-10 sm:h-16"></td></tr>
                     </table>
                 </div>
 
-                <table class="w-full border-collapse border-2 border-gray-800 text-sm mb-6">
+                <table class="w-full border-collapse border sm:border-2 border-gray-800 text-xs sm:text-sm mb-4 sm:mb-6">
                     <tr>
-                        <th class="border border-gray-600 bg-gray-100 px-4 py-3 w-1/4">담당자 성명</th>
-                        <td class="border border-gray-600 px-4 py-3"><div class="content-box font-bold" contenteditable="true"></div></td>
-                        <th class="border border-gray-600 bg-gray-100 px-4 py-3 w-1/4">요청 일자</th>
-                        <td class="border border-gray-600 px-4 py-3 text-center text-base font-semibold" id="reqDate"></td>
+                        <th class="border border-gray-600 bg-gray-100 px-2 sm:px-4 py-2 sm:py-3 w-1/4">담당자 성명</th>
+                        <td class="border border-gray-600 px-2 sm:px-4 py-2 sm:py-3"><div class="content-box font-bold border-none" contenteditable="true"></div></td>
+                        <th class="border border-gray-600 bg-gray-100 px-2 sm:px-4 py-2 sm:py-3 w-1/4">요청 일자</th>
+                        <td class="border border-gray-600 px-2 sm:px-4 py-2 sm:py-3 text-center text-sm sm:text-base font-semibold" id="reqDate"></td>
                     </tr>
                     <tr>
-                        <th class="border border-gray-600 bg-gray-100 px-4 py-3">자재 재질</th>
-                        <td class="border border-gray-600 px-4 py-3 text-center font-bold text-base" id="reqMaterial"></td>
-                        <th class="border border-gray-600 bg-gray-100 px-4 py-3">자재 규격</th>
-                        <td class="border border-gray-600 px-4 py-3 text-center font-bold text-base" id="reqSpec"></td>
+                        <th class="border border-gray-600 bg-gray-100 px-2 sm:px-4 py-2 sm:py-3">자재 재질</th>
+                        <td class="border border-gray-600 px-2 sm:px-4 py-2 sm:py-3 text-center font-bold text-sm sm:text-base" id="reqMaterial"></td>
+                        <th class="border border-gray-600 bg-gray-100 px-2 sm:px-4 py-2 sm:py-3">자재 규격</th>
+                        <td class="border border-gray-600 px-2 sm:px-4 py-2 sm:py-3 text-center font-bold text-sm sm:text-base" id="reqSpec"></td>
                     </tr>
                 </table>
 
-                <table class="w-full border-collapse border-2 border-gray-800 text-base text-center mb-6">
+                <table class="w-full border-collapse border sm:border-2 border-gray-800 text-xs sm:text-base text-center mb-4 sm:mb-6">
                     <tr class="bg-gray-100 font-bold">
-                        <th class="border border-gray-600 px-4 py-3">현재 재고</th>
-                        <th class="border border-gray-600 px-4 py-3 text-blue-700">출고 요청량</th>
-                        <th class="border border-gray-600 px-4 py-3 text-red-600 bg-red-50">부족 수량 (구매 필요)</th>
+                        <th class="border border-gray-600 px-2 sm:px-4 py-2 sm:py-3">현재 재고</th>
+                        <th class="border border-gray-600 px-2 sm:px-4 py-2 sm:py-3 text-blue-700">출고 요청량</th>
+                        <th class="border border-gray-600 px-2 sm:px-4 py-2 sm:py-3 text-red-600 bg-red-50">부족 수량 (구매 필요)</th>
                     </tr>
                     <tr>
-                        <td class="border border-gray-600 px-4 py-4 font-bold" id="reqCurrentStock"></td>
-                        <td class="border border-gray-600 px-4 py-4 font-bold text-blue-700" id="reqOutQty"></td>
-                        <td class="border border-gray-600 px-4 py-4 font-bold text-red-600 bg-red-50 text-xl" id="reqShortage"></td>
+                        <td class="border border-gray-600 px-2 sm:px-4 py-3 sm:py-4 font-bold" id="reqCurrentStock"></td>
+                        <td class="border border-gray-600 px-2 sm:px-4 py-3 sm:py-4 font-bold text-blue-700" id="reqOutQty"></td>
+                        <td class="border border-gray-600 px-2 sm:px-4 py-3 sm:py-4 font-bold text-red-600 bg-red-50 text-base sm:text-xl" id="reqShortage"></td>
                     </tr>
                 </table>
                 
-                <div class="border-2 border-gray-800 p-4 min-h-[120px]">
-                    <span class="block text-base font-bold text-gray-800 mb-2">■ 사용 목적 및 비고</span>
-                    <div class="content-box text-left border-none" contenteditable="true">용도 및 세부 사유를 입력하세요.</div>
+                <div class="border sm:border-2 border-gray-800 p-3 sm:p-4 min-h-[80px] sm:min-h-[120px]">
+                    <span class="block text-sm sm:text-base font-bold text-gray-800 mb-1 sm:mb-2">■ 사용 목적 및 비고</span>
+                    <div class="content-box text-left border-none text-xs sm:text-sm" contenteditable="true">용도 및 세부 사유를 입력하세요.</div>
                 </div>
             </div>
             
-            <div class="bg-gray-100 p-4 border-t border-gray-300 flex justify-end gap-3 no-print">
-                <button onclick="captureImage('purchasePrintArea')" class="bg-indigo-600 text-white px-5 py-2 rounded shadow hover:bg-indigo-700 transition font-bold">이미지로 복사</button>
-                <button onclick="window.print()" class="bg-blue-600 text-white px-5 py-2 rounded shadow hover:bg-blue-700 transition font-bold">인쇄하기</button>
-                <button onclick="closeModal('purchaseModal')" class="bg-red-500 text-white px-5 py-2 rounded shadow hover:bg-red-600 transition font-bold">닫기</button>
+            <div class="bg-gray-100 p-3 sm:p-4 border-t border-gray-300 flex flex-wrap justify-end gap-2 sm:gap-3 no-print">
+                <button onclick="captureImage('purchasePrintArea')" class="bg-indigo-600 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded shadow hover:bg-indigo-700 transition text-xs sm:text-sm font-bold">이미지로 복사</button>
+                <button onclick="window.print()" class="bg-blue-600 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded shadow hover:bg-blue-700 transition text-xs sm:text-sm font-bold">인쇄하기</button>
+                <button onclick="closeModal('purchaseModal')" class="bg-red-500 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded shadow hover:bg-red-600 transition text-xs sm:text-sm font-bold">닫기</button>
             </div>
         </div>
     </div>
 
     <!-- 입출고 내역 관리 모달 -->
-    <div id="historyModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[85vh]">
-            <div class="bg-gray-800 px-6 py-4 flex justify-between items-center"><h2 class="text-white font-bold text-lg">입출고 기록 내역 관리</h2></div>
+    <div id="historyModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-6xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="bg-gray-800 px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center"><h2 class="text-white font-bold text-base sm:text-lg">입출고 기록 내역 관리</h2></div>
             
-            <div class="bg-gray-100 p-3 border-b flex gap-2 items-center text-sm shadow-sm">
-                <span class="font-bold text-gray-700">기간:</span>
-                <input type="date" id="histStartDate" class="border p-1.5 rounded"> <span class="text-gray-500">~</span> <input type="date" id="histEndDate" class="border p-1.5 rounded">
+            <div class="bg-gray-100 p-2 sm:p-3 border-b flex flex-col sm:flex-row gap-2 sm:items-center text-xs sm:text-sm shadow-sm">
+                <div class="flex items-center gap-1 sm:gap-2">
+                    <span class="font-bold text-gray-700">기간:</span>
+                    <input type="date" id="histStartDate" class="border p-1 sm:p-1.5 rounded w-full sm:w-auto"> 
+                    <span class="text-gray-500">~</span> 
+                    <input type="date" id="histEndDate" class="border p-1 sm:p-1.5 rounded w-full sm:w-auto">
+                </div>
                 
-                <span class="font-bold text-gray-700 ml-2">유형:</span>
-                <select id="histType" class="border p-1.5 rounded">
-                    <option value="">전체 유형</option>
-                    <option value="입고">입고</option>
-                    <option value="외부입고">외부 입고</option>
-                    <option value="반입">반입</option>
-                    <option value="출고">출고</option>
-                    <option value="외부반출">외부 반출</option>
-                </select>
+                <div class="flex items-center gap-1 sm:gap-2 w-full sm:w-auto">
+                    <span class="font-bold text-gray-700 sm:ml-2">유형:</span>
+                    <select id="histType" class="border p-1 sm:p-1.5 rounded w-full sm:w-auto">
+                        <option value="">전체 유형</option>
+                        <option value="반입">반입</option>
+                        <option value="외부 입고">외부 입고</option>
+                        <option value="출고">출고</option>
+                        <option value="외부 출고">외부 출고</option>
+                    </select>
+                </div>
                 
-                <span class="font-bold text-gray-700 ml-2">검색:</span>
-                <input type="text" id="histSearch" class="border p-1.5 rounded flex-grow" placeholder="재질 입력" onkeyup="if(event.key==='Enter') renderHistory()">
+                <div class="flex items-center gap-1 sm:gap-2 w-full sm:w-auto flex-grow">
+                    <span class="font-bold text-gray-700 sm:ml-2 w-10 sm:w-auto">검색:</span>
+                    <input type="text" id="histSearch" class="border p-1 sm:p-1.5 rounded flex-grow w-full" placeholder="재질 입력" onkeyup="if(event.key==='Enter') renderHistory()">
+                </div>
                 
-                <button onclick="renderHistory()" class="bg-blue-600 text-white px-4 py-1.5 rounded hover:bg-blue-700 font-bold ml-1">조회</button>
-                <button onclick="exportHistoryExcel()" class="bg-green-600 text-white px-4 py-1.5 rounded hover:bg-green-700 font-bold ml-1">엑셀 저장</button>
+                <div class="flex justify-end gap-1 sm:gap-2 mt-1 sm:mt-0">
+                    <button onclick="renderHistory()" class="bg-blue-600 text-white px-3 sm:px-4 py-1 sm:py-1.5 rounded hover:bg-blue-700 font-bold">조회</button>
+                    <button onclick="exportHistoryExcel()" class="bg-green-600 text-white px-3 sm:px-4 py-1 sm:py-1.5 rounded hover:bg-green-700 font-bold">엑셀 저장</button>
+                </div>
             </div>
 
-            <div class="p-4 overflow-y-auto flex-grow bg-white">
-                <table class="w-full border-collapse border border-gray-300 text-sm text-center">
-                    <thead class="bg-gray-200 sticky top-0">
+            <div class="p-2 sm:p-4 overflow-y-auto flex-grow bg-white overflow-x-auto">
+                <table class="w-full border-collapse border border-gray-300 text-xs sm:text-sm text-center min-w-[850px]">
+                    <thead class="bg-gray-200 sticky top-0 shadow-sm">
                         <tr>
-                            <th class="border border-gray-300 p-2">일자</th>
-                            <th class="border border-gray-300 p-2">유형</th>
-                            <th class="border border-gray-300 p-2">재질</th>
-                            <th class="border border-gray-300 p-2">두께</th>
-                            <th class="border border-gray-300 p-2">가로</th>
-                            <th class="border border-gray-300 p-2">세로</th>
-                            <th class="border border-gray-300 p-2">수량</th>
-                            <th class="border border-gray-300 p-2">관리</th>
+                            <th class="border border-gray-300 p-1.5 sm:p-2">일자</th>
+                            <th class="border border-gray-300 p-1.5 sm:p-2">유형</th>
+                            <th class="border border-gray-300 p-1.5 sm:p-2">재질</th>
+                            <th class="border border-gray-300 p-1.5 sm:p-2">두께</th>
+                            <th class="border border-gray-300 p-1.5 sm:p-2">가로</th>
+                            <th class="border border-gray-300 p-1.5 sm:p-2">세로</th>
+                            <th class="border border-gray-300 p-1.5 sm:p-2">수량</th>
+                            <th class="border border-gray-300 p-1.5 sm:p-2">잔여량</th>
+                            <th class="border border-gray-300 p-1.5 sm:p-2">담당자</th>
+                            <th class="border border-gray-300 p-1.5 sm:p-2">사용부서</th>
+                            <th class="border border-gray-300 p-1.5 sm:p-2">프로젝트명/구매처</th>
+                            <th class="border border-gray-300 p-1.5 sm:p-2 w-32">관리</th>
                         </tr>
                     </thead>
                     <tbody id="historyBody">
@@ -481,17 +630,14 @@
                     </tbody>
                 </table>
             </div>
-            <div class="bg-gray-100 p-4 border-t flex justify-end">
-                <button onclick="closeModal('historyModal')" class="px-5 py-2 border border-gray-400 bg-white text-gray-700 rounded hover:bg-gray-200 font-bold shadow-sm">닫기</button>
+            <div class="bg-gray-100 p-2 sm:p-4 border-t flex justify-end">
+                <button onclick="closeModal('historyModal')" class="px-4 sm:px-5 py-1.5 sm:py-2 border border-gray-400 bg-white text-gray-700 rounded hover:bg-gray-200 font-bold shadow-sm text-sm">닫기</button>
             </div>
         </div>
     </div>
 
     <!-- Firebase 연동 스크립트 -->
     <script>
-        // ==========================================
-        // Firebase 설정 (제공해주신 데이터)
-        // ==========================================
         const firebaseConfig = {
             apiKey: "AIzaSyBRwg3k5usuMkBXH9LB6T-9Uuw9ZU1TBMs",
             authDomain: "formeng-7c4b3.firebaseapp.com",
@@ -509,7 +655,9 @@
 
         const today = new Date();
         const formattedToday = today.toISOString().split('T')[0];
-        document.getElementById('todayDateStr').innerText = formattedToday;
+        
+        document.getElementById('topTodayDateStr').innerText = formattedToday;
+        document.getElementById('lastUpdateStr').innerText = formattedToday;
         document.getElementById('inDate').value = formattedToday;
         document.getElementById('outDate').value = formattedToday;
 
@@ -517,10 +665,13 @@
         let historyLogs = [];
         let templateWorkbook = null;
         let currentEditingIndex = -1;
+        
+        let sortCol = '';
+        let sortAsc = true;
 
-        // ==========================================
-        // Firebase 실시간 리스너 연동 (onSnapshot)
-        // ==========================================
+        /* ==========================================
+           Firebase 실시간 리스너 (onSnapshot)
+        ========================================== */
         db.collection("inventory").onSnapshot((snapshot) => {
             inventoryData = [];
             snapshot.forEach((doc) => {
@@ -534,6 +685,11 @@
             snapshot.forEach((doc) => {
                 historyLogs.push({ id: doc.id, ...doc.data() });
             });
+            
+            if (historyLogs.length > 0 && historyLogs[0].date) {
+                document.getElementById('lastUpdateStr').innerText = historyLogs[0].date;
+            }
+
             if (!document.getElementById('historyModal').classList.contains('hidden')) {
                 renderHistory(); 
             }
@@ -567,7 +723,17 @@
         }
         loadCustomMap();
 
-        /* ================= 1. 탑다운 필터 ================= */
+        /* ================= 1. 탑다운 필터 및 정렬 ================= */
+        function sortTable(col) {
+            if (sortCol === col) {
+                sortAsc = !sortAsc;
+            } else {
+                sortCol = col;
+                sortAsc = true;
+            }
+            applyFilters();
+        }
+
         function triggerFilterUpdate() {
             updateDatalists();
             applyFilters();
@@ -608,25 +774,47 @@
             const selMat = document.getElementById('filterMaterial').value.trim();
             const selThk = document.getElementById('filterThickness').value.trim();
             
+            let renderData = [...inventoryData];
+            
+            if (sortCol) {
+                renderData.sort((a, b) => {
+                    let cmp = 0;
+                    if (sortCol === 'no') {
+                        cmp = inventoryData.indexOf(a) - inventoryData.indexOf(b);
+                    } else if (sortCol === 'steel') {
+                        let valA = a.material.toUpperCase().includes('AL') ? 'AL' : 'ST';
+                        let valB = b.material.toUpperCase().includes('AL') ? 'AL' : 'ST';
+                        cmp = String(valA).localeCompare(String(valB), undefined, {numeric: true, sensitivity: 'base'});
+                    } else {
+                        let valA = a[sortCol] || '';
+                        let valB = b[sortCol] || '';
+                        cmp = String(valA).localeCompare(String(valB), undefined, {numeric: true, sensitivity: 'base'});
+                    }
+                    return sortAsc ? cmp : -cmp;
+                });
+            }
+            
             const tbody = document.getElementById('inventoryBody');
             tbody.innerHTML = '';
             
-            inventoryData.forEach((item, index) => {
+            renderData.forEach((item) => {
                 const steelType = item.material.toUpperCase().includes('AL') ? 'AL' : 'ST';
                 if (selType && steelType !== selType) return;
                 if (selMat && !item.material.includes(selMat)) return;
                 if (selThk && item.thickness != selThk) return;
 
+                const originalIndex = inventoryData.findIndex(orig => orig.id === item.id);
+                
                 const tr = document.createElement('tr');
                 tr.className = "hover:bg-blue-50 cursor-pointer transition";
                 tr.title = "클릭하여 상세 관리 열기";
-                tr.onclick = () => openEditModal(index);
+                tr.onclick = () => openEditModal(originalIndex);
                 
                 const formatOut = (val) => val > 0 ? `<span class="text-red-600 font-bold">-${val}</span>` : '-';
                 const formatIn = (val) => val > 0 ? `<span class="text-blue-600 font-bold">${val}</span>` : '-';
 
                 tr.innerHTML = `
-                    <td class="excel-td font-bold text-blue-700 text-[13px]">${index + 1}</td>
+                    <td class="excel-td font-bold text-blue-700 text-[13px]">${originalIndex + 1}</td>
                     <td class="excel-td text-gray-800 font-bold text-center">${item.loc1 || ''}</td>
                     <td class="excel-td text-gray-800 text-center">${item.loc2 || ''}</td>
                     <td class="excel-td text-gray-800 text-center">${item.loc3 || ''}</td>
@@ -641,9 +829,9 @@
                     <td class="excel-td text-[11px] text-center px-1 truncate max-w-[100px]">${item.note2||''}</td>
                     <td class="excel-td bg-[#f1f5f9] font-bold text-blue-700 text-[13px] text-center">${item.qty}</td> 
                     <td class="excel-td bg-gray-50 text-center">${formatOut(item.out_qty)}</td>
-                    <td class="excel-td bg-gray-50 text-center">${formatIn(item.in_ext_qty)}</td>
                     <td class="excel-td bg-gray-50 text-center">${formatOut(item.out_ext_qty)}</td>
                     <td class="excel-td bg-gray-50 text-center">${formatIn(item.in_return_qty)}</td>
+                    <td class="excel-td bg-gray-50 text-center">${formatIn(item.in_ext_qty)}</td>
                 `;
                 tbody.appendChild(tr);
             });
@@ -727,10 +915,11 @@
 
         /* ================= 3. 입고증 작성 (Firebase Set/Merge) ================= */
         function openInboundModal() {
-            document.getElementById('inboundType').value = '입고';
+            document.getElementById('inboundType').value = '반입';
             document.getElementById('inDate').value = formattedToday;
             document.getElementById('inSteelType').value = '';
             document.getElementById('inGravity').value = '';
+            document.getElementById('inCompany').value = '';
             document.getElementById('inMaterial').value = '';
             document.getElementById('inThickness').value = '';
             document.getElementById('inWidth').value = '';
@@ -753,6 +942,9 @@
             const wid = parseFloat(document.getElementById('inWidth').value) || 0;
             const hgt = parseFloat(document.getElementById('inHeight').value) || 0;
             const qty = parseInt(document.getElementById('inQty').value) || 0;
+            const note = document.getElementById('inNote').value.trim();
+            const note2 = document.getElementById('inNote2').value.trim();
+            const company = document.getElementById('inCompany').value.trim();
             
             if (!mat || qty <= 0) return alert('재질과 정상적인 수량을 입력하세요.');
             
@@ -766,16 +958,15 @@
             };
             
             updateData.qty += qty;
-            if(type === '입고') updateData.in_qty += qty;
-            if(type === '외부입고') updateData.in_ext_qty += qty;
             if(type === '반입') updateData.in_return_qty += qty;
+            if(type === '외부 입고') updateData.in_ext_qty += qty;
             
-            delete updateData.id; // 삭제용 id 필드 제거
+            delete updateData.id; 
 
             db.collection("inventory").doc(docId).set(updateData, { merge: true }).then(() => {
-                addHistoryLog(type, mat, thk, wid, hgt, qty, dateStr);
+                addHistoryLog(type, mat, thk, wid, hgt, qty, dateStr, { note, note2, company, remainQty: updateData.qty });
                 closeModal('inboundModal');
-            }).catch(err => alert("DB 오류: " + err.message));
+            }).catch(err => alert("오류 발생: " + err.message));
         }
 
         /* ================= 4. 출고증 작성 (Firebase Update) ================= */
@@ -810,6 +1001,7 @@
 
         function openOutboundModal() { 
             initOutboundFilters();
+            document.getElementById('outboundType').value = '출고';
             document.getElementById('outDate').value = formattedToday;
             document.getElementById('outMaterial').value = '';
             document.getElementById('outThickness').value = '';
@@ -856,10 +1048,10 @@
 
             let updateData = { qty: item.qty - qty };
             if(type === '출고') updateData.out_qty = item.out_qty + qty;
-            if(type === '외부반출') updateData.out_ext_qty = item.out_ext_qty + qty;
+            if(type === '외부 출고') updateData.out_ext_qty = item.out_ext_qty + qty;
 
             db.collection("inventory").doc(docId).update(updateData).then(() => {
-                addHistoryLog(type, mat, thk, wid, hgt, -qty, dateStr);
+                addHistoryLog(type, mat, thk, wid, hgt, -qty, dateStr, { dept, emp, project, remainQty: updateData.qty });
                 
                 document.getElementById('prtOutDate').innerText = dateStr;
                 document.getElementById('prtOutType').innerText = type;
@@ -869,11 +1061,11 @@
                 document.getElementById('prtOutMaterial').innerText = mat;
                 document.getElementById('prtOutSpec').innerText = `${thk}T x ${wid} x ${hgt}`;
                 document.getElementById('prtOutQty').innerText = `${qty} 개`;
-                document.getElementById('prtOutRemain').innerText = `${item.qty - qty} 개`;
+                document.getElementById('prtOutRemain').innerText = `${updateData.qty} 개`;
 
                 closeModal('outboundModal');
                 document.getElementById('printOutboundModal').classList.remove('hidden');
-            }).catch(err => alert("DB 오류: " + err.message));
+            }).catch(err => alert("오류 발생: " + err.message));
         }
 
         /* ================= 5. 공통 (모달 및 캡처) ================= */
@@ -898,10 +1090,11 @@
             }
         }
 
-        /* ================= 6. 히스토리 기록 (Firebase Add/Delete) ================= */
-        function addHistoryLog(type, mat, thk, wid, hgt, qty, dateStr) {
+        /* ================= 6. 히스토리 기록 및 열람/수정 ================= */
+        function addHistoryLog(type, mat, thk, wid, hgt, qty, dateStr, extra = {}) {
             db.collection("history").add({
                 type, mat, thk, wid, hgt, qty, date: dateStr,
+                ...extra,
                 timestamp: firebase.firestore.FieldValue.serverTimestamp()
             });
         }
@@ -930,7 +1123,7 @@
                 const qtyText = log.qty > 0 ? `+${Math.abs(log.qty)}` : `-${Math.abs(log.qty)}`;
                 
                 return `
-                <tr class="hover:bg-blue-50 border-b border-gray-300">
+                <tr class="hover:bg-blue-50 border-b border-gray-300 cursor-pointer" onclick="viewReceipt('${log.id}')" title="클릭하여 입/출고증 확인">
                     <td class="p-2 text-gray-700">${log.date}</td>
                     <td class="p-2 font-bold ${typeClass}">${log.type}</td>
                     <td class="p-2 font-bold text-gray-800">${log.mat}</td>
@@ -938,9 +1131,143 @@
                     <td class="p-2">${log.wid}</td>
                     <td class="p-2">${log.hgt}</td>
                     <td class="p-2 font-bold ${qtyClass}">${qtyText}</td>
-                    <td class="p-2"><button onclick="revertHistory('${log.id}')" class="text-xs bg-red-100 text-red-700 px-3 py-1.5 rounded border border-red-300 hover:bg-red-200 shadow-sm font-bold transition">삭제(복구)</button></td>
+                    <td class="p-2 font-bold text-gray-800">${log.remainQty !== undefined ? log.remainQty : '-'}</td>
+                    <td class="p-2">${log.emp || '-'}</td>
+                    <td class="p-2">${log.dept || '-'}</td>
+                    <td class="p-2">${log.project || log.company || '-'}</td>
+                    <td class="p-2 flex justify-center gap-1">
+                        <button onclick="event.stopPropagation(); openEditReceiptModal('${log.id}')" class="text-xs bg-gray-100 text-gray-700 px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-200 shadow-sm font-bold transition">수정</button>
+                        <button onclick="event.stopPropagation(); revertHistory('${log.id}')" class="text-xs bg-red-100 text-red-700 px-3 py-1.5 rounded border border-red-300 hover:bg-red-200 shadow-sm font-bold transition">삭제(복구)</button>
+                    </td>
                 </tr>`;
             }).join('');
+        }
+
+        // 히스토리 리스트 클릭 시 입/출고증 열람 (작성 당시 재고 잔여량 반영)
+        function viewReceipt(logId) {
+            const log = historyLogs.find(l => l.id === logId);
+            if (!log) return;
+            
+            const remainQtyStr = log.remainQty !== undefined ? `${log.remainQty} 개` : '-';
+
+            if (log.type === '출고' || log.type === '외부 출고') {
+                document.getElementById('prtOutDate').innerText = log.date || '-';
+                document.getElementById('prtOutType').innerText = log.type || '-';
+                document.getElementById('prtOutDept').innerText = log.dept || '-';
+                document.getElementById('prtOutEmp').innerText = log.emp || '-';
+                document.getElementById('prtOutProject').innerText = log.project || '-';
+                document.getElementById('prtOutMaterial').innerText = log.mat || '-';
+                document.getElementById('prtOutSpec').innerText = `${log.thk}T x ${log.wid} x ${log.hgt}`;
+                document.getElementById('prtOutQty').innerText = `${Math.abs(log.qty)} 개`;
+                document.getElementById('prtOutRemain').innerText = remainQtyStr;
+
+                document.getElementById('printOutboundModal').classList.remove('hidden');
+            } else {
+                document.getElementById('prtInDate').innerText = log.date || '-';
+                document.getElementById('prtInType').innerText = log.type || '-';
+                document.getElementById('prtInCompany').innerText = log.company || '-';
+                document.getElementById('prtInNote').innerText = log.note || '-';
+                document.getElementById('prtInNote2').innerText = log.note2 || '-';
+                document.getElementById('prtInMaterial').innerText = log.mat || '-';
+                document.getElementById('prtInSpec').innerText = `${log.thk}T x ${log.wid} x ${log.hgt}`;
+                document.getElementById('prtInQty').innerText = `${Math.abs(log.qty)} 개`;
+                document.getElementById('prtInRemain').innerText = remainQtyStr;
+
+                document.getElementById('printInboundModal').classList.remove('hidden');
+            }
+        }
+        
+        // 내역 수정 모달 열기
+        function openEditReceiptModal(logId) {
+            const log = historyLogs.find(l => l.id === logId);
+            if(!log) return;
+            
+            document.getElementById('editReceiptLogId').value = logId;
+            document.getElementById('editReceiptDate').value = log.date;
+            document.getElementById('editReceiptQty').value = Math.abs(log.qty);
+            document.getElementById('editReceiptMat').value = `${log.mat} (${log.thk}T x ${log.wid} x ${log.hgt})`;
+
+            if (log.type === '출고' || log.type === '외부 출고') {
+                document.getElementById('editReceiptInFields').classList.add('hidden');
+                document.getElementById('editReceiptOutFields').classList.remove('hidden');
+                
+                document.getElementById('editReceiptDept').value = log.dept || '';
+                document.getElementById('editReceiptEmp').value = log.emp || '';
+                document.getElementById('editReceiptProject').value = log.project || '';
+            } else {
+                document.getElementById('editReceiptOutFields').classList.add('hidden');
+                document.getElementById('editReceiptInFields').classList.remove('hidden');
+                
+                document.getElementById('editReceiptCompany').value = log.company || '';
+                document.getElementById('editReceiptNote').value = log.note || '';
+                document.getElementById('editReceiptNote2').value = log.note2 || '';
+            }
+            
+            document.getElementById('editReceiptModal').classList.remove('hidden');
+        }
+
+        // 내역 수정사항 Firebase 저장 (수량 변경 시 재고/누계/스냅샷 자동 업데이트)
+        function saveReceiptEdit() {
+            const logId = document.getElementById('editReceiptLogId').value;
+            const log = historyLogs.find(l => l.id === logId);
+            if(!log) return;
+
+            const newDate = document.getElementById('editReceiptDate').value;
+            const newQtyInput = parseInt(document.getElementById('editReceiptQty').value) || 0;
+            
+            if(newQtyInput <= 0) return alert("수량은 1 이상이어야 합니다.");
+
+            const oldLogQty = Math.abs(log.qty);
+            const qtyDiff = newQtyInput - oldLogQty; 
+
+            const isOutbound = (log.type === '출고' || log.type === '외부 출고');
+            const signedNewQty = isOutbound ? -newQtyInput : newQtyInput;
+
+            let updatePayload = { date: newDate, qty: signedNewQty };
+
+            // 잔여량 스냅샷도 변경된 수량만큼 보정
+            if (log.remainQty !== undefined) {
+                updatePayload.remainQty = log.remainQty + (isOutbound ? -qtyDiff : qtyDiff);
+            }
+
+            if (isOutbound) {
+                updatePayload.dept = document.getElementById('editReceiptDept').value;
+                updatePayload.emp = document.getElementById('editReceiptEmp').value;
+                updatePayload.project = document.getElementById('editReceiptProject').value;
+            } else {
+                updatePayload.company = document.getElementById('editReceiptCompany').value;
+                updatePayload.note = document.getElementById('editReceiptNote').value;
+                updatePayload.note2 = document.getElementById('editReceiptNote2').value;
+            }
+            
+            // 수량이 변경되었다면 메인 인벤토리 데이터베이스도 함께 수정
+            if (qtyDiff !== 0) {
+                const docId = generateDocId(log.mat, log.thk, log.wid, log.hgt);
+                const item = inventoryData.find(i => i.id === docId);
+                
+                if (item) {
+                    let invUpdate = { qty: item.qty + (isOutbound ? -qtyDiff : qtyDiff) };
+                    
+                    if (log.type === '반입') invUpdate.in_return_qty = (item.in_return_qty || 0) + qtyDiff; 
+                    else if (log.type === '외부 입고') invUpdate.in_ext_qty = (item.in_ext_qty || 0) + qtyDiff; 
+                    else if (log.type === '출고') invUpdate.out_qty = (item.out_qty || 0) + qtyDiff; 
+                    else if (log.type === '외부 출고') invUpdate.out_ext_qty = (item.out_ext_qty || 0) + qtyDiff; 
+                    
+                    db.collection("inventory").doc(docId).update(invUpdate).then(() => {
+                        db.collection("history").doc(logId).update(updatePayload).then(() => {
+                            alert("기록 및 재고 수량이 성공적으로 수정되었습니다.");
+                            closeModal('editReceiptModal');
+                        });
+                    }).catch(err => alert("재고 업데이트 실패: " + err.message));
+                    return;
+                }
+            } 
+
+            // 단순 텍스트 정보만 변경된 경우
+            db.collection("history").doc(logId).update(updatePayload).then(() => {
+                alert("기록이 성공적으로 수정되었습니다.");
+                closeModal('editReceiptModal');
+            }).catch(err => alert("수정 실패: " + err.message));
         }
 
         async function exportHistoryExcel() {
@@ -957,14 +1284,22 @@
                 { header: '두께', key: 'thk', width: 10 },
                 { header: '가로', key: 'wid', width: 10 },
                 { header: '세로', key: 'hgt', width: 10 },
-                { header: '수량', key: 'qty', width: 10 }
+                { header: '수량', key: 'qty', width: 10 },
+                { header: '잔여량', key: 'remainQty', width: 10 },
+                { header: '담당자', key: 'emp', width: 12 },
+                { header: '사용부서', key: 'dept', width: 12 },
+                { header: '프로젝트명/업체', key: 'project', width: 15 }
             ];
             
             ws.getRow(1).font = { bold: true };
             ws.getRow(1).alignment = { horizontal: 'center' };
             
             filtered.forEach(log => {
-                ws.addRow({ date: log.date, type: log.type, mat: log.mat, thk: log.thk, wid: log.wid, hgt: log.hgt, qty: log.qty });
+                ws.addRow({ 
+                    date: log.date, type: log.type, mat: log.mat, thk: log.thk, 
+                    wid: log.wid, hgt: log.hgt, qty: log.qty, remainQty: log.remainQty !== undefined ? log.remainQty : '-',
+                    emp: log.emp || '-', dept: log.dept || '-', project: log.project || log.company || '-'
+                });
             });
             
             const buffer = await wb.xlsx.writeBuffer();
@@ -983,11 +1318,10 @@
                 let updateData = { qty: item.qty - log.qty };
                 
                 const absQty = Math.abs(log.qty);
-                if(log.type === '입고') updateData.in_qty = item.in_qty - absQty;
-                if(log.type === '외부입고') updateData.in_ext_qty = item.in_ext_qty - absQty;
                 if(log.type === '반입') updateData.in_return_qty = item.in_return_qty - absQty;
+                if(log.type === '외부 입고') updateData.in_ext_qty = item.in_ext_qty - absQty;
                 if(log.type === '출고') updateData.out_qty = item.out_qty - absQty;
-                if(log.type === '외부반출') updateData.out_ext_qty = item.out_ext_qty - absQty;
+                if(log.type === '외부 출고') updateData.out_ext_qty = item.out_ext_qty - absQty;
 
                 db.collection("inventory").doc(item.id).update(updateData).then(() => {
                     db.collection("history").doc(id).delete().then(() => {
@@ -1006,7 +1340,21 @@
             document.getElementById('historyModal').classList.remove('hidden'); 
         }
 
-        /* ================= 7. 엑셀 연동 (업로드 시 Firestore 전체 동기화) ================= */
+        /* ================= 7. 엑셀 양식 업로드/다운로드 (서식 유지) ================= */
+        async function importTemplate(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async function(evt) {
+                const wb = new ExcelJS.Workbook();
+                await wb.xlsx.load(evt.target.result);
+                templateWorkbook = wb; 
+                alert('양식이 성공적으로 적용되었습니다.\n앞으로 [엑셀 다운로드] 시 이 양식 디자인과 구조가 사용됩니다.');
+                e.target.value = ''; 
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
         async function importExcel(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -1031,13 +1379,13 @@
                                 thickness: parseFloat(row.getCell(8).value) || 0,
                                 width: parseFloat(row.getCell(9).value) || 0,
                                 height: parseFloat(row.getCell(10).value) || 0,
-                                qty: parseInt(row.getCell(13).value) || parseInt(row.getCell(16).value) || 0,
-                                note: row.getCell(14).value ? String(row.getCell(14).value).trim() : "",
-                                note2: row.getCell(15).value ? String(row.getCell(15).value).trim() : "",
-                                out_qty: Math.abs(parseInt(row.getCell(17).value) || 0),
-                                in_ext_qty: parseInt(row.getCell(18).value) || 0,
-                                out_ext_qty: Math.abs(parseInt(row.getCell(19).value) || 0),
-                                in_return_qty: parseInt(row.getCell(20).value) || 0
+                                qty: parseInt(row.getCell(11).value) || parseInt(row.getCell(14).value) || 0,
+                                note: row.getCell(12).value ? String(row.getCell(12).value).trim() : "",
+                                note2: row.getCell(13).value ? String(row.getCell(13).value).trim() : "",
+                                out_qty: Math.abs(parseInt(row.getCell(15).value) || 0),
+                                out_ext_qty: Math.abs(parseInt(row.getCell(16).value) || 0),
+                                in_return_qty: parseInt(row.getCell(17).value) || 0,
+                                in_ext_qty: parseInt(row.getCell(18).value) || 0
                             });
                         }
                     }
@@ -1071,10 +1419,20 @@
                     row.commit();
                 }
                 let rowIndex = 10;
-                inventoryData.forEach((item, index) => {
+                
+                // 현재 보여지는(정렬된) 순서대로 다운로드
+                const rowsToExport = Array.from(document.getElementById('inventoryBody').children).map(tr => {
+                    const idx = parseInt(tr.children[0].innerText) - 1;
+                    return inventoryData[idx];
+                });
+                
+                rowsToExport.forEach((item, index) => {
+                    if(!item) return;
                     const row = ws.getRow(rowIndex);
-                    row.getCell(1).value = index + 1;
-                    row.getCell(2).value = item.loc1; row.getCell(3).value = item.loc2; row.getCell(4).value = item.loc3;
+                    row.getCell(1).value = index + 1; // NO. (현재 보이는 순서)
+                    row.getCell(2).value = item.loc1; 
+                    row.getCell(3).value = item.loc2; 
+                    row.getCell(4).value = item.loc3;
                     
                     const isAL = item.material.toUpperCase().includes('AL');
                     row.getCell(5).value = isAL ? 'AL' : 'ST';
@@ -1083,22 +1441,23 @@
                     row.getCell(8).value = item.thickness;
                     row.getCell(9).value = item.width;
                     row.getCell(10).value = item.height;
-                    row.getCell(13).value = item.qty;
-                    row.getCell(14).value = item.note;
-                    row.getCell(15).value = item.note2;
-                    row.getCell(16).value = item.qty;
                     
-                    // 누계 연동
-                    row.getCell(17).value = item.out_qty > 0 ? -item.out_qty : null;
-                    row.getCell(18).value = item.in_ext_qty > 0 ? item.in_ext_qty : null;
-                    row.getCell(19).value = item.out_ext_qty > 0 ? -item.out_ext_qty : null;
-                    row.getCell(20).value = item.in_return_qty > 0 ? item.in_return_qty : null;
+                    // 정확한 엑셀 폼 순서에 따라 데이터 매핑 (1번 ~ 18번 열)
+                    row.getCell(11).value = item.qty; // 실물재고
+                    row.getCell(12).value = item.note; // 비고
+                    row.getCell(13).value = item.note2; // 비고2
+                    row.getCell(14).value = item.qty; // 현재잔여량
+                    
+                    row.getCell(15).value = item.out_qty > 0 ? -item.out_qty : null; // 출고누계
+                    row.getCell(16).value = item.out_ext_qty > 0 ? -item.out_ext_qty : null; // 외부출고누계
+                    row.getCell(17).value = item.in_return_qty > 0 ? item.in_return_qty : null; // 반입누계
+                    row.getCell(18).value = item.in_ext_qty > 0 ? item.in_ext_qty : null; // 외부입고누계
                     
                     row.commit();
                     rowIndex++;
                 });
             } else {
-                alert("업로드된 원본 양식이 없어 임시 양식으로 다운로드됩니다.\n완벽한 디자인 유지를 위해 먼저 [엑셀 양식 업로드]를 권장합니다.");
+                alert("업로드된 원본 양식이 없어 임시 양식으로 다운로드됩니다.\n완벽한 디자인 유지를 위해 먼저 [양식 업로드]를 권장합니다.");
                 wb = new ExcelJS.Workbook();
                 ws = wb.addWorksheet('실물재고 조사');
                 ws.columns = [{ header: 'NO.', key: 'no', width: 5 }, { header: '재질', key: 'mat', width: 22 }, { header: '두께(mm)', key: 'thk', width: 10 }, { header: '실물재고', key: 'qty', width: 10 }];
