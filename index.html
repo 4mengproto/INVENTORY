@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>원자재 재고 관리 시스템</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <!-- Firebase SDK 추가 (Compat 버전 사용으로 기존 코드와 완벽 호환) -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+    <style>
+        @media print {
+            body * { visibility: hidden; }
+            .print-area, .print-area * { visibility: visible; }
+            .print-area { position: absolute; left: 0; top: 0; width: 100%; padding: 0; margin: 0; }
+            .no-print { display: none !important; }
+        }
+        
+        /* 엑셀 테이블 스타일 (너비를 내용에 맞추고 중앙 정렬 최적화) */
+        .excel-table { border-collapse: collapse; border: 1px solid #94a3b8; width: max-content; background: #fff; margin: 16px auto; }
+        .excel-th { border: 1px solid #cbd5e1; text-align: center; vertical-align: middle; padding: 4px 6px; font-size: 11px; white-space: nowrap; color: #334155; }
+        .excel-td { border: 1px solid #cbd5e1; text-align: center; vertical-align: middle; padding: 4px 6px; font-size: 11px; white-space: nowrap; height: 26px; cursor: pointer; }
+        .excel-td:hover { background-color: #e2e8f0; }
+        
+        .table-container::-webkit-scrollbar { height: 14px; }
+        .table-container::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 2px; border: 1px solid #cbd5e1; }
+        .table-container::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 2px; }
+        .table-container::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        .content-box { min-height: 24px; padding: 4px; outline: none; border-bottom: 1px solid #cbd5e1; display: inline-block; width: 100%; text-align: center; }
+        .content-box:focus { border-bottom: 2px solid #3b82f6; }
+
+        #zoneMap {
+            background-color: #1e5b7b;
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+
+        .zone-btn {
+            position: absolute;
+            width: 8%;
+            height: 14%;
+            background-color: rgba(163, 163, 163, 0.85);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: bold;
+            cursor: pointer;
+            border: 1px solid #475569;
+            box-shadow: 1px 1px 3px rgba(0,0,0,0.3);
+            transition: all 0.1s;
+        }
+        .zone-btn:hover { background-color: #facc15; color: black; transform: scale(1.05); z-index: 10; }
+        .zone-btn.active { background-color: #facc15; color: black; border: 2px solid #ef4444; box-shadow: 0 0 5px rgba(239,68,68,0.8); z-index: 10;}
+    </style>
+</head>
+<body class="bg-[#f8fafc] p-4 font-sans h-screen flex flex-col overflow-hidden">
+
+    <div class="w-full bg-white p-4 rounded shadow-sm border border-gray-200 flex-grow flex flex-col overflow-hidden">
+        
+        <!-- 상단 헤더 -->
+        <div class="flex justify-between items-start mb-4">
+            <div>
+                <h1 class="text-[24px] font-bold mb-3 tracking-tight text-gray-800" id="mainTitle">[2026년 원자재 재고 현황]</h1>
+                <div class="flex gap-2 flex-wrap">
+                    <button onclick="openInboundModal()" class="bg-[#3b82f6] text-white px-5 py-2 text-sm font-bold rounded shadow-sm hover:bg-blue-600 transition">+ 입고증 작성</button>
+                    <button onclick="openOutboundModal()" class="bg-[#ef4444] text-white px-5 py-2 text-sm font-bold rounded shadow-sm hover:bg-red-600 transition">- 출고증 작성</button>
+                    <button onclick="exportExcel()" class="bg-[#10b981] text-white px-5 py-2 text-sm font-bold rounded shadow-sm hover:bg-green-600 transition">엑셀 다운로드</button>
+                    <label class="bg-[#d97706] text-white px-5 py-2 text-sm font-bold rounded shadow-sm hover:bg-yellow-600 cursor-pointer transition">
+                        엑셀 업로드
+                        <input type="file" id="excelUpload" accept=".xlsx, .xls" class="hidden" onchange="importExcel(event)">
+                    </label>
+                    <button onclick="openHistoryModal()" class="bg-gray-700 text-white px-5 py-2 text-sm font-bold rounded shadow-sm hover:bg-gray-800 transition">내역 관리</button>
+                </div>
+                
+                <!-- 자동완성 필터 영역 -->
+                <div class="flex gap-4 mt-4 bg-gray-50 p-2.5 rounded shadow-sm border border-gray-200 text-sm">
+                    <div class="flex items-center gap-2">
+                        <label class="font-bold text-gray-700">강종</label>
+                        <input list="steelFilterList" id="filterSteelType" oninput="triggerFilterUpdate()" class="border border-gray-300 rounded p-1.5 w-[110px]" placeholder="전체 (검색)">
+                        <datalist id="steelFilterList"></datalist>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <label class="font-bold text-gray-700">재질</label>
+                        <input list="matFilterList" id="filterMaterial" oninput="triggerFilterUpdate()" class="border border-gray-300 rounded p-1.5 w-[150px]" placeholder="전체 (검색)">
+                        <datalist id="matFilterList"></datalist>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <label class="font-bold text-gray-700">두께</label>
+                        <input list="thkFilterList" id="filterThickness" oninput="triggerFilterUpdate()" class="border border-gray-300 rounded p-1.5 w-[110px]" placeholder="전체 (검색)">
+                        <datalist id="thkFilterList"></datalist>
+                    </div>
+                    <button onclick="resetFilters()" class="bg-gray-500 text-white px-4 py-1.5 rounded font-bold hover:bg-gray-600 transition">초기화</button>
+                </div>
+            </div>
+
+            <!-- 우측 상단 정보 표 -->
+            <div class="flex flex-col items-end gap-2">
+                <div class="flex gap-3">
+                    <table class="border-collapse border border-[#94a3b8] text-center shadow-sm">
+                        <tr><th colspan="6" class="border border-[#94a3b8] bg-white py-0.5 text-[11px] font-normal text-gray-600">공정별 구분</th></tr>
+                        <tr class="text-[11px]"><td class="border border-[#94a3b8] px-2 py-1">프레스</td><td class="border border-[#94a3b8] w-5 bg-white"></td><td class="border border-[#94a3b8] px-2 py-1">개발</td><td class="border border-[#94a3b8] w-5 bg-[#fef08a]"></td><td class="border border-[#94a3b8] px-2 py-1">조립</td><td class="border border-[#94a3b8] w-5 bg-[#fef08a]"></td></tr>
+                        <tr class="text-[11px]"><td class="border border-[#94a3b8] px-2 py-1">레이저</td><td class="border border-[#94a3b8] w-5 bg-white"></td><td class="border border-[#94a3b8] px-2 py-1">선행</td><td class="border border-[#94a3b8] w-5 bg-white"></td><td class="border border-[#94a3b8] px-2 py-1">생산3</td><td class="border border-[#94a3b8] w-5 bg-[#93c5fd]"></td></tr>
+                    </table>
+                    <table class="border-collapse border border-[#94a3b8] text-center shadow-sm">
+                        <tr><th colspan="4" class="border border-[#94a3b8] bg-white py-0.5 text-[11px] font-normal text-gray-600">업체별 구분</th></tr>
+                        <tr class="text-[11px]"><td class="border border-[#94a3b8] px-2 py-1">태극</td><td class="border border-[#94a3b8] w-5 bg-white"></td><td class="border border-[#94a3b8] w-5 bg-[#bfdbfe]"></td><td class="border border-[#94a3b8] w-5 bg-[#fef08a]"></td></tr>
+                        <tr class="text-[11px]"><td class="border border-[#94a3b8] px-2 py-1">유원</td><td class="border border-[#94a3b8] w-5 bg-white"></td><td class="border border-[#94a3b8] w-5 bg-[#fed7aa]"></td><td class="border border-[#94a3b8] w-5 bg-[#fef08a]"></td></tr>
+                    </table>
+                </div>
+                <table class="border-collapse border border-[#94a3b8] text-center shadow-sm text-[12px]">
+                    <tr><td class="bg-[#facc15] font-bold border border-[#94a3b8] px-6 py-1 text-gray-800">Update</td><td class="bg-[#facc15] border border-[#94a3b8] px-6 py-1 text-gray-800">최종 업데이트</td></tr>
+                    <tr><td class="text-blue-700 italic font-bold border border-[#94a3b8] px-6 py-1 bg-white">Today</td><td class="text-blue-700 border border-[#94a3b8] px-6 py-1 bg-white" id="todayDateStr">2026-11-03</td></tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- 메인 재고 테이블 -->
+        <div class="overflow-auto table-container flex-grow border-t border-gray-300 relative bg-white flex justify-center">
+            <table class="excel-table mx-auto bg-white" style="width: 100%;">
+                <thead class="sticky top-0 bg-[#f8fafc] z-10 shadow-sm">
+                    <tr>
+                        <th colspan="13" class="border-b border-gray-300 bg-white"></th>
+                        <th colspan="5" class="text-blue-700 italic text-[12px] font-bold text-center py-1.5 border border-gray-300 bg-white">2026년 재고</th>
+                    </tr>
+                    <tr>
+                        <th class="excel-th w-10" rowspan="3">NO.</th>
+                        <th class="excel-th" colspan="3">위치</th>
+                        <th class="excel-th" colspan="6">품명</th>
+                        <th class="excel-th text-[#ea580c] w-16" rowspan="3">실물<br>재고</th>
+                        <th class="excel-th w-28" rowspan="3">비고</th>
+                        <th class="excel-th w-24" rowspan="3">비고2</th>
+                        <th class="excel-th text-blue-700 w-20" rowspan="3">현재<br>잔여량</th>
+                        <th class="excel-th text-blue-700 w-16" rowspan="3">출고<br>누계</th>
+                        <th class="excel-th text-blue-700 w-16" rowspan="3">외부<br>입고<br>누계</th>
+                        <th class="excel-th text-blue-700 w-16" rowspan="3">외부<br>반출<br>누계</th>
+                        <th class="excel-th text-red-600 w-16" rowspan="3">반입<br>누계</th>
+                    </tr>
+                    <tr>
+                        <th class="excel-th w-10 text-[11px]" rowspan="2">대</th>
+                        <th class="excel-th w-10 text-[11px]" rowspan="2">중</th>
+                        <th class="excel-th w-10 text-[11px]" rowspan="2">소</th>
+                        <th class="excel-th" colspan="2">종류</th>
+                        <th class="excel-th w-40" rowspan="2">재질</th>
+                        <th class="excel-th" colspan="3">규격</th>
+                    </tr>
+                    <tr>
+                        <th class="excel-th w-12 text-[11px]">강종</th>
+                        <th class="excel-th w-12 text-[11px]">비중</th>
+                        <th class="excel-th w-16 text-[11px]">두께<br>(mm)</th>
+                        <th class="excel-th w-16 text-[11px]">가로<br>(mm)</th>
+                        <th class="excel-th w-16 text-[11px]">세로<br>(mm)</th>
+                    </tr>
+                </thead>
+                <tbody id="inventoryBody" class="bg-white">
+                    <!-- Data will be populated here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 수정 모달 -->
+    <div id="editModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[95vh]">
+            <div class="bg-gray-800 px-6 py-4 flex justify-between items-center"><h2 class="text-white font-bold text-lg">자재 상세 관리</h2></div>
+            <div class="p-5 overflow-y-auto space-y-4">
+                <p id="editTargetDesc" class="text-sm font-bold text-blue-600 mb-2 border-b pb-2"></p>
+                
+                <div class="border rounded p-3 bg-gray-50 border-gray-300">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="font-bold text-gray-800">■ 위치 수정</label>
+                        <button onclick="saveLocation()" class="bg-indigo-600 text-white px-3 py-1 text-xs font-bold rounded shadow hover:bg-indigo-700 transition">위치만 저장</button>
+                    </div>
+                    
+                    <div id="zoneMap" class="w-full h-[200px] relative border-2 border-gray-800 rounded-sm mb-3 select-none overflow-hidden group">
+                        <label class="absolute top-2 left-2 bg-black bg-opacity-60 text-white px-2 py-1 text-[10px] rounded cursor-pointer hover:bg-opacity-90 z-20 transition opacity-0 group-hover:opacity-100">
+                            도면 배경 변경
+                            <input type="file" accept="image/*" class="hidden" onchange="changeMapBackground(event)">
+                        </label>
+                        <div id="defaultGreenBox" class="absolute top-0 right-0 w-[46%] h-[52%] bg-[#92c955] border-l-2 border-b-2 border-gray-800"></div>
+                        <div class="zone-btn" style="bottom: 4%; left: 3%;" onclick="selectZone('1')">1</div><div class="zone-btn" style="bottom: 20%; left: 3%;" onclick="selectZone('2')">2</div><div class="zone-btn" style="bottom: 36%; left: 3%;" onclick="selectZone('3')">3</div><div class="zone-btn" style="bottom: 52%; left: 3%;" onclick="selectZone('4')">4</div>
+                        <div class="zone-btn" style="bottom: 4%; left: 13%;" onclick="selectZone('5')">5</div><div class="zone-btn" style="bottom: 20%; left: 13%;" onclick="selectZone('6')">6</div><div class="zone-btn" style="bottom: 36%; left: 13%;" onclick="selectZone('7')">7</div><div class="zone-btn" style="bottom: 52%; left: 13%;" onclick="selectZone('8')">8</div>
+                        <div class="zone-btn" style="top: 4%; left: 18%;" onclick="selectZone('8')">8</div><div class="zone-btn" style="top: 4%; left: 28%;" onclick="selectZone('9')">9</div><div class="zone-btn" style="top: 4%; left: 38%;" onclick="selectZone('10')">10</div>
+                        <div class="zone-btn" style="top: 18%; left: 45%;" onclick="selectZone('11')">11</div><div class="zone-btn" style="top: 34%; left: 45%;" onclick="selectZone('12')">12</div><div class="zone-btn" style="top: 50%; left: 45%;" onclick="selectZone('13')">13</div>
+                        <div class="zone-btn" style="top: 54%; left: 54%;" onclick="selectZone('14')">14</div><div class="zone-btn" style="top: 54%; left: 63%;" onclick="selectZone('15')">15</div><div class="zone-btn" style="top: 54%; left: 72%;" onclick="selectZone('16')">16</div><div class="zone-btn" style="top: 54%; left: 81%;" onclick="selectZone('17')">17</div>
+                        <div class="zone-btn" style="top: 64%; right: 2%;" onclick="selectZone('18')">18</div><div class="zone-btn" style="top: 80%; right: 2%;" onclick="selectZone('19')">19</div>
+                        <div class="zone-btn" style="bottom: 4%; right: 12%;" onclick="selectZone('20')">20</div><div class="zone-btn" style="bottom: 4%; right: 22%;" onclick="selectZone('21')">21</div><div class="zone-btn" style="bottom: 4%; right: 32%;" onclick="selectZone('22')">22</div><div class="zone-btn" style="bottom: 4%; right: 42%;" onclick="selectZone('23')">23</div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2">
+                        <div><label class="block text-xs font-bold text-gray-700 mb-1">위치 (대: 구역)</label><input type="text" id="editLoc1" class="w-full border rounded p-1.5 text-sm bg-yellow-50 font-bold text-center" placeholder="선택됨"></div>
+                        <div><label class="block text-xs font-bold text-gray-700 mb-1">위치 (중)</label><input type="text" id="editLoc2" class="w-full border rounded p-1.5 text-sm text-center" placeholder="수기입력"></div>
+                        <div><label class="block text-xs font-bold text-gray-700 mb-1">위치 (소)</label><input type="text" id="editLoc3" class="w-full border rounded p-1.5 text-sm text-center" placeholder="수기입력"></div>
+                    </div>
+                </div>
+
+                <div class="border rounded p-3 bg-red-50 border-red-200">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="font-bold text-red-800">■ 수량 변경 (강제 조정)</label>
+                        <button onclick="saveQuantity()" class="bg-red-600 text-white px-3 py-1 text-xs font-bold rounded shadow hover:bg-red-700 transition">수량만 저장</button>
+                    </div>
+                    <input type="number" id="editQty" class="w-full border border-red-300 rounded p-1.5 font-bold text-red-600 text-lg text-center">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 border-t pt-4 mt-2 border-gray-300">
+                    <button onclick="openInboundFromEdit()" class="py-3 bg-blue-100 text-blue-800 font-bold rounded shadow-sm border border-blue-300 hover:bg-blue-200 transition">입고증 작성</button>
+                    <button onclick="openOutboundFromEdit()" class="py-3 bg-red-100 text-red-800 font-bold rounded shadow-sm border border-red-300 hover:bg-red-200 transition">출고증 작성</button>
+                </div>
+                
+                <div class="flex justify-end pt-2">
+                    <button onclick="closeModal('editModal')" class="px-5 py-2 border border-gray-400 rounded text-gray-700 bg-gray-100 hover:bg-gray-200 font-bold shadow-sm">닫기</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 입고증 작성 모달 -->
+    <div id="inboundModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+            <div class="bg-blue-600 px-6 py-4 flex justify-between items-center"><h2 class="text-white font-bold text-lg">입고증 작성</h2></div>
+            <div class="p-6 space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">입고 유형</label>
+                        <select id="inboundType" class="w-full border rounded p-2 bg-blue-50 text-blue-800 font-bold text-center">
+                            <option value="입고">기본 입고</option>
+                            <option value="외부입고">외부 입고</option>
+                            <option value="반입">반입</option>
+                        </select>
+                    </div>
+                    <div><label class="block text-sm font-bold text-gray-700 mb-1">입고 날짜</label><input type="date" id="inDate" class="w-full border rounded p-2 text-center"></div>
+                </div>
+
+                <div class="border-t pt-3 mt-1">
+                    <label class="block text-sm font-bold text-gray-700 mb-1">강종 (선택)</label>
+                    <select id="inSteelType" class="w-full border rounded p-2 text-center" onchange="autoFillGravity()">
+                        <option value="">선택</option>
+                        <option value="GA" data-grav="8.15">GA</option>
+                        <option value="ST" data-grav="7.85">ST (Steel)</option>
+                        <option value="GI" data-grav="7.85">GI</option>
+                        <option value="AL" data-grav="2.7">AL (알루미늄)</option>
+                    </select>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div><label class="block text-sm font-bold text-gray-700 mb-1">비중</label><input type="text" id="inGravity" class="w-full border rounded p-2 bg-gray-100 text-center" readonly></div>
+                    <div><label class="block text-sm font-bold text-gray-700 mb-1">재질</label><input type="text" id="inMaterial" class="w-full border rounded p-2 text-center" placeholder="직접 입력"></div>
+                    <div><label class="block text-sm font-bold text-gray-700 mb-1">두께 (mm)</label><input type="number" step="0.1" id="inThickness" class="w-full border rounded p-2 text-center"></div>
+                    <div><label class="block text-sm font-bold text-gray-700 mb-1">입고 수량</label><input type="number" id="inQty" class="w-full border rounded p-2 text-blue-600 font-bold text-center"></div>
+                    <div><label class="block text-sm font-bold text-gray-700 mb-1">가로 (mm)</label><input type="number" id="inWidth" class="w-full border rounded p-2 text-center"></div>
+                    <div><label class="block text-sm font-bold text-gray-700 mb-1">세로 (mm)</label><input type="number" id="inHeight" class="w-full border rounded p-2 text-center"></div>
+                    
+                    <div><label class="block text-sm font-bold text-gray-700 mb-1">비고</label><input type="text" id="inNote" class="w-full border rounded p-2 text-center"></div>
+                    <div><label class="block text-sm font-bold text-gray-700 mb-1">비고2</label><input type="text" id="inNote2" class="w-full border rounded p-2 text-center"></div>
+                </div>
+                
+                <div class="flex justify-end gap-2 mt-4">
+                    <button onclick="closeModal('inboundModal')" class="px-4 py-2 border rounded text-gray-600 hover:bg-gray-100 font-bold">취소</button>
+                    <button onclick="processInbound()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold shadow-md">입고 처리</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 출고증 작성 모달 -->
+    <div id="outboundModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="bg-red-600 px-6 py-4 flex justify-between items-center"><h2 class="text-white font-bold text-lg">출고증 작성</h2></div>
+            <div class="p-6 overflow-y-auto space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">출고 유형</label>
+                        <select id="outboundType" class="w-full border rounded p-2 bg-red-50 text-red-800 font-bold text-center">
+                            <option value="출고">기본 출고</option>
+                            <option value="외부반출">외부 반출</option>
+                        </select>
+                    </div>
+                    <div><label class="block text-sm font-bold text-gray-700 mb-1">출고 날짜</label><input type="date" id="outDate" class="w-full border rounded p-2 text-center"></div>
+                </div>
+
+                <div class="bg-gray-50 p-3 rounded border border-gray-200 text-xs text-gray-600">
+                    <p class="font-bold text-blue-700 mb-1">※ 재질 -> 두께 -> 가로 -> 세로 순차 검색</p>
+                    <div class="grid grid-cols-2 gap-2 mt-2">
+                        <div><label class="font-bold">재질</label><input list="outMatList" id="outMaterial" class="w-full border rounded p-1.5 text-center" oninput="updateThicknessList()" placeholder="입력/선택"><datalist id="outMatList"></datalist></div>
+                        <div><label class="font-bold">두께</label><input list="outThkList" id="outThickness" class="w-full border rounded p-1.5 text-center" oninput="updateWidthList()" placeholder="입력/선택"><datalist id="outThkList"></datalist></div>
+                        <div><label class="font-bold">가로</label><input list="outWidList" id="outWidth" class="w-full border rounded p-1.5 text-center" oninput="updateHeightList()" placeholder="입력/선택"><datalist id="outWidList"></datalist></div>
+                        <div><label class="font-bold">세로</label><input list="outHgtList" id="outHeight" class="w-full border rounded p-1.5 text-center" oninput="checkCurrentStock()" placeholder="입력/선택"><datalist id="outHgtList"></datalist></div>
+                    </div>
+                </div>
+                
+                <div class="bg-gray-100 p-2 rounded text-sm flex justify-between items-center"><span class="font-bold text-gray-700">현재 자재 재고:</span><span id="currentStockDisplay" class="font-bold text-lg text-red-600">0 개</span></div>
+                
+                <div><label class="block text-sm font-bold text-gray-700 mb-1">출고 수량</label><input type="number" id="outQty" class="w-full border border-red-300 rounded p-2 text-red-600 font-bold bg-red-50 text-lg text-center" placeholder="수량 입력"></div>
+                
+                <div class="border-t pt-3 mt-3 grid grid-cols-2 gap-2">
+                    <div class="col-span-2"><label class="block text-xs font-bold text-gray-700 mb-1">출고 부서/공정</label>
+                        <input list="deptList" id="outDept" class="w-full border rounded p-2 text-sm text-center" placeholder="신규사업부, 프레스, 레이저 등">
+                        <datalist id="deptList"><option value="신규사업부"><option value="프레스"><option value="개발"><option value="조립"><option value="레이저"><option value="선행"><option value="생산3"></datalist>
+                    </div>
+                    <div><label class="block text-xs font-bold text-gray-700 mb-1">담당자 이름</label>
+                        <input list="empList" id="outEmp" class="w-full border rounded p-2 text-sm text-center" placeholder="이원찬, 김종성 등">
+                        <datalist id="empList"><option value="이원찬"><option value="김종성"><option value="최옥경"></datalist>
+                    </div>
+                    <div><label class="block text-xs font-bold text-gray-700 mb-1">프로젝트명</label>
+                        <input list="projectList" id="outProject" class="w-full border rounded p-2 text-sm text-center" placeholder="프로젝트 번호 입력">
+                        <datalist id="projectList">
+                            <option value="RS-2024-00421213">
+                            <option value="RS-2024-00420754">
+                        </datalist>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 mt-4 pt-2">
+                    <button onclick="closeModal('outboundModal')" class="px-4 py-2 border rounded text-gray-600 hover:bg-gray-100 font-bold">취소</button>
+                    <button onclick="processOutbound()" class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 font-bold shadow-md">출고 요청</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 출고증 인쇄/복사 모달 -->
+    <div id="printOutboundModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden flex flex-col">
+            <div class="p-8 flex-grow print-area bg-white" id="outboundPrintArea">
+                <h2 class="text-3xl font-extrabold text-center mb-6 border-b-4 border-gray-800 pb-4 tracking-widest">원 자 재 출 고 증</h2>
+                <div class="flex justify-between items-end mb-4">
+                    <div class="text-sm font-bold text-gray-700">출고 일자: <span id="prtOutDate" class="text-blue-700"></span></div>
+                    <table class="border-collapse border border-gray-600 text-center shadow-sm text-sm">
+                        <tr><th class="border border-gray-600 bg-gray-100 px-3 py-1">담당</th><th class="border border-gray-600 bg-gray-100 px-3 py-1">팀장</th><th class="border border-gray-600 bg-gray-100 px-3 py-1">승인</th></tr>
+                        <tr><td class="border border-gray-600 px-4 py-3 h-14"></td><td class="border border-gray-600 px-4 py-3 h-14"></td><td class="border border-gray-600 px-4 py-3 h-14"></td></tr>
+                    </table>
+                </div>
+
+                <table class="w-full border-collapse border-2 border-gray-800 text-sm mb-6 text-center">
+                    <tr class="bg-gray-100 font-bold">
+                        <th class="border border-gray-600 py-2">출고 유형</th>
+                        <th class="border border-gray-600 py-2">부서/공정</th>
+                        <th class="border border-gray-600 py-2">담당자</th>
+                        <th class="border border-gray-600 py-2">프로젝트명</th>
+                    </tr>
+                    <tr>
+                        <td class="border border-gray-600 py-3" id="prtOutType"></td>
+                        <td class="border border-gray-600 py-3" id="prtOutDept"></td>
+                        <td class="border border-gray-600 py-3" id="prtOutEmp"></td>
+                        <td class="border border-gray-600 py-3" id="prtOutProject"></td>
+                    </tr>
+                </table>
+
+                <table class="w-full border-collapse border-2 border-gray-800 text-sm text-center">
+                    <tr class="bg-gray-100 font-bold">
+                        <th class="border border-gray-600 py-2 w-1/4">재질</th>
+                        <th class="border border-gray-600 py-2 w-1/4">규격(T x W x H)</th>
+                        <th class="border border-gray-600 py-2 w-1/4">출고 수량</th>
+                        <th class="border border-gray-600 py-2 w-1/4">출고 후 잔여량</th>
+                    </tr>
+                    <tr>
+                        <td class="border border-gray-600 py-4 font-bold" id="prtOutMaterial"></td>
+                        <td class="border border-gray-600 py-4" id="prtOutSpec"></td>
+                        <td class="border border-gray-600 py-4 font-bold text-red-600 text-lg" id="prtOutQty"></td>
+                        <td class="border border-gray-600 py-4 font-bold text-blue-700" id="prtOutRemain"></td>
+                    </tr>
+                </table>
+                <div class="mt-4 border-2 border-gray-800 p-3 min-h-[80px]">
+                    <span class="font-bold text-sm block mb-1">■ 비고 및 확인사항</span>
+                    <div class="content-box text-left" contenteditable="true">특이사항 없음</div>
+                </div>
+            </div>
+            
+            <div class="bg-gray-100 p-4 border-t border-gray-300 flex justify-end gap-3 no-print">
+                <button onclick="captureImage('outboundPrintArea')" class="bg-indigo-600 text-white px-5 py-2 rounded shadow hover:bg-indigo-700 transition font-bold">이미지로 복사</button>
+                <button onclick="window.print()" class="bg-blue-600 text-white px-5 py-2 rounded shadow hover:bg-blue-700 transition font-bold">출고증 인쇄</button>
+                <button onclick="closeModal('printOutboundModal')" class="bg-red-500 text-white px-5 py-2 rounded shadow hover:bg-red-600 transition font-bold">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 원자재 구매 요청서 모달 -->
+    <div id="purchaseModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden flex flex-col">
+            <div class="p-8 flex-grow print-area bg-white" id="purchasePrintArea">
+                <h2 class="text-3xl font-extrabold text-center mb-8 border-b-4 border-gray-800 pb-4 tracking-widest">원자재 구매 요청서</h2>
+                
+                <div class="flex justify-end mb-6 text-sm text-center font-bold">
+                    <table class="border-collapse border border-gray-600 shadow-sm">
+                        <tr><th class="border border-gray-600 bg-gray-100 px-4 py-1 w-20">작성자</th><th class="border border-gray-600 bg-gray-100 px-4 py-1 w-20">담당자</th><th class="border border-gray-600 bg-gray-100 px-4 py-1 w-20">승인</th></tr>
+                        <tr><td class="border border-gray-600 px-4 py-4 h-16"></td><td class="border border-gray-600 px-4 py-4 h-16"></td><td class="border border-gray-600 px-4 py-4 h-16"></td></tr>
+                    </table>
+                </div>
+
+                <table class="w-full border-collapse border-2 border-gray-800 text-sm mb-6">
+                    <tr>
+                        <th class="border border-gray-600 bg-gray-100 px-4 py-3 w-1/4">담당자 성명</th>
+                        <td class="border border-gray-600 px-4 py-3"><div class="content-box font-bold" contenteditable="true"></div></td>
+                        <th class="border border-gray-600 bg-gray-100 px-4 py-3 w-1/4">요청 일자</th>
+                        <td class="border border-gray-600 px-4 py-3 text-center text-base font-semibold" id="reqDate"></td>
+                    </tr>
+                    <tr>
+                        <th class="border border-gray-600 bg-gray-100 px-4 py-3">자재 재질</th>
+                        <td class="border border-gray-600 px-4 py-3 text-center font-bold text-base" id="reqMaterial"></td>
+                        <th class="border border-gray-600 bg-gray-100 px-4 py-3">자재 규격</th>
+                        <td class="border border-gray-600 px-4 py-3 text-center font-bold text-base" id="reqSpec"></td>
+                    </tr>
+                </table>
+
+                <table class="w-full border-collapse border-2 border-gray-800 text-base text-center mb-6">
+                    <tr class="bg-gray-100 font-bold">
+                        <th class="border border-gray-600 px-4 py-3">현재 재고</th>
+                        <th class="border border-gray-600 px-4 py-3 text-blue-700">출고 요청량</th>
+                        <th class="border border-gray-600 px-4 py-3 text-red-600 bg-red-50">부족 수량 (구매 필요)</th>
+                    </tr>
+                    <tr>
+                        <td class="border border-gray-600 px-4 py-4 font-bold" id="reqCurrentStock"></td>
+                        <td class="border border-gray-600 px-4 py-4 font-bold text-blue-700" id="reqOutQty"></td>
+                        <td class="border border-gray-600 px-4 py-4 font-bold text-red-600 bg-red-50 text-xl" id="reqShortage"></td>
+                    </tr>
+                </table>
+                
+                <div class="border-2 border-gray-800 p-4 min-h-[120px]">
+                    <span class="block text-base font-bold text-gray-800 mb-2">■ 사용 목적 및 비고</span>
+                    <div class="content-box text-left border-none" contenteditable="true">용도 및 세부 사유를 입력하세요.</div>
+                </div>
+            </div>
+            
+            <div class="bg-gray-100 p-4 border-t border-gray-300 flex justify-end gap-3 no-print">
+                <button onclick="captureImage('purchasePrintArea')" class="bg-indigo-600 text-white px-5 py-2 rounded shadow hover:bg-indigo-700 transition font-bold">이미지로 복사</button>
+                <button onclick="window.print()" class="bg-blue-600 text-white px-5 py-2 rounded shadow hover:bg-blue-700 transition font-bold">인쇄하기</button>
+                <button onclick="closeModal('purchaseModal')" class="bg-red-500 text-white px-5 py-2 rounded shadow hover:bg-red-600 transition font-bold">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 입출고 내역 관리 모달 -->
+    <div id="historyModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div class="bg-gray-800 px-6 py-4 flex justify-between items-center"><h2 class="text-white font-bold text-lg">입출고 기록 내역 관리</h2></div>
+            
+            <div class="bg-gray-100 p-3 border-b flex gap-2 items-center text-sm shadow-sm">
+                <span class="font-bold text-gray-700">기간:</span>
+                <input type="date" id="histStartDate" class="border p-1.5 rounded"> <span class="text-gray-500">~</span> <input type="date" id="histEndDate" class="border p-1.5 rounded">
+                
+                <span class="font-bold text-gray-700 ml-2">유형:</span>
+                <select id="histType" class="border p-1.5 rounded">
+                    <option value="">전체 유형</option>
+                    <option value="입고">입고</option>
+                    <option value="외부입고">외부 입고</option>
+                    <option value="반입">반입</option>
+                    <option value="출고">출고</option>
+                    <option value="외부반출">외부 반출</option>
+                </select>
+                
+                <span class="font-bold text-gray-700 ml-2">검색:</span>
+                <input type="text" id="histSearch" class="border p-1.5 rounded flex-grow" placeholder="재질 입력" onkeyup="if(event.key==='Enter') renderHistory()">
+                
+                <button onclick="renderHistory()" class="bg-blue-600 text-white px-4 py-1.5 rounded hover:bg-blue-700 font-bold ml-1">조회</button>
+                <button onclick="exportHistoryExcel()" class="bg-green-600 text-white px-4 py-1.5 rounded hover:bg-green-700 font-bold ml-1">엑셀 저장</button>
+            </div>
+
+            <div class="p-4 overflow-y-auto flex-grow bg-white">
+                <table class="w-full border-collapse border border-gray-300 text-sm text-center">
+                    <thead class="bg-gray-200 sticky top-0">
+                        <tr>
+                            <th class="border border-gray-300 p-2">일자</th>
+                            <th class="border border-gray-300 p-2">유형</th>
+                            <th class="border border-gray-300 p-2">재질</th>
+                            <th class="border border-gray-300 p-2">두께</th>
+                            <th class="border border-gray-300 p-2">가로</th>
+                            <th class="border border-gray-300 p-2">세로</th>
+                            <th class="border border-gray-300 p-2">수량</th>
+                            <th class="border border-gray-300 p-2">관리</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyBody">
+                        <!-- History injected here -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="bg-gray-100 p-4 border-t flex justify-end">
+                <button onclick="closeModal('historyModal')" class="px-5 py-2 border border-gray-400 bg-white text-gray-700 rounded hover:bg-gray-200 font-bold shadow-sm">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase 연동 스크립트 -->
+    <script>
+        // ==========================================
+        // Firebase 설정 (제공해주신 데이터)
+        // ==========================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyBRwg3k5usuMkBXH9LB6T-9Uuw9ZU1TBMs",
+            authDomain: "formeng-7c4b3.firebaseapp.com",
+            databaseURL: "https://formeng-7c4b3-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "formeng-7c4b3",
+            storageBucket: "formeng-7c4b3.firebasestorage.app",
+            messagingSenderId: "745402830490",
+            appId: "1:745402830490:web:1695b49ac7491531b8d923"
+        };
+        
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+
+        const today = new Date();
+        const formattedToday = today.toISOString().split('T')[0];
+        document.getElementById('todayDateStr').innerText = formattedToday;
+        document.getElementById('inDate').value = formattedToday;
+        document.getElementById('outDate').value = formattedToday;
+
+        let inventoryData = [];
+        let historyLogs = [];
+        let templateWorkbook = null;
+        let currentEditingIndex = -1;
+
+        // ==========================================
+        // Firebase 실시간 리스너 연동 (onSnapshot)
+        // ==========================================
+        db.collection("inventory").onSnapshot((snapshot) => {
+            inventoryData = [];
+            snapshot.forEach((doc) => {
+                inventoryData.push({ id: doc.id, ...doc.data() });
+            });
+            initMainFilters(); 
+        });
+
+        db.collection("history").orderBy("timestamp", "desc").onSnapshot((snapshot) => {
+            historyLogs = [];
+            snapshot.forEach((doc) => {
+                historyLogs.push({ id: doc.id, ...doc.data() });
+            });
+            if (!document.getElementById('historyModal').classList.contains('hidden')) {
+                renderHistory(); 
+            }
+        });
+
+        function generateDocId(mat, thk, wid, hgt) {
+            return `${mat}_${thk}_${wid}_${hgt}`.replace(/[\/\s]/g, '-');
+        }
+
+        /* ================= 0. 도면 배경 교체 ================= */
+        function loadCustomMap() {
+            try {
+                const savedBg = localStorage.getItem('customMapBg');
+                if(savedBg) {
+                    document.getElementById('zoneMap').style.backgroundImage = `url(${savedBg})`;
+                    document.getElementById('defaultGreenBox').style.display = 'none';
+                }
+            } catch(e) {}
+        }
+        function changeMapBackground(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                const url = evt.target.result;
+                document.getElementById('zoneMap').style.backgroundImage = `url(${url})`;
+                document.getElementById('defaultGreenBox').style.display = 'none';
+                try { localStorage.setItem('customMapBg', url); } catch(e){}
+            };
+            reader.readAsDataURL(file);
+        }
+        loadCustomMap();
+
+        /* ================= 1. 탑다운 필터 ================= */
+        function triggerFilterUpdate() {
+            updateDatalists();
+            applyFilters();
+        }
+
+        function updateDatalists() {
+            const selType = document.getElementById('filterSteelType').value.trim();
+            const selMat = document.getElementById('filterMaterial').value.trim();
+            
+            let filteredMats = inventoryData;
+            if (selType) filteredMats = filteredMats.filter(i => (i.material.toUpperCase().includes('AL') ? 'AL' : 'ST') === selType);
+            
+            const materials = [...new Set(filteredMats.map(i => i.material))].sort();
+            document.getElementById('matFilterList').innerHTML = materials.map(m => `<option value="${m}"></option>`).join('');
+            
+            let filteredThks = filteredMats;
+            if (selMat) filteredThks = filteredThks.filter(i => i.material.includes(selMat));
+            
+            const thicknesses = [...new Set(filteredThks.map(i => i.thickness))].sort((a,b)=>a-b);
+            document.getElementById('thkFilterList').innerHTML = thicknesses.map(t => `<option value="${t}"></option>`).join('');
+        }
+
+        function initMainFilters() {
+            const steelTypes = [...new Set(inventoryData.map(i => i.material.toUpperCase().includes('AL') ? 'AL' : 'ST'))].sort();
+            document.getElementById('steelFilterList').innerHTML = steelTypes.map(s => `<option value="${s}"></option>`).join('');
+            triggerFilterUpdate();
+        }
+
+        function resetFilters() {
+            document.getElementById('filterSteelType').value = "";
+            document.getElementById('filterMaterial').value = "";
+            document.getElementById('filterThickness').value = "";
+            triggerFilterUpdate();
+        }
+
+        function applyFilters() {
+            const selType = document.getElementById('filterSteelType').value.trim();
+            const selMat = document.getElementById('filterMaterial').value.trim();
+            const selThk = document.getElementById('filterThickness').value.trim();
+            
+            const tbody = document.getElementById('inventoryBody');
+            tbody.innerHTML = '';
+            
+            inventoryData.forEach((item, index) => {
+                const steelType = item.material.toUpperCase().includes('AL') ? 'AL' : 'ST';
+                if (selType && steelType !== selType) return;
+                if (selMat && !item.material.includes(selMat)) return;
+                if (selThk && item.thickness != selThk) return;
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-blue-50 cursor-pointer transition";
+                tr.title = "클릭하여 상세 관리 열기";
+                tr.onclick = () => openEditModal(index);
+                
+                const formatOut = (val) => val > 0 ? `<span class="text-red-600 font-bold">-${val}</span>` : '-';
+                const formatIn = (val) => val > 0 ? `<span class="text-blue-600 font-bold">${val}</span>` : '-';
+
+                tr.innerHTML = `
+                    <td class="excel-td font-bold text-blue-700 text-[13px]">${index + 1}</td>
+                    <td class="excel-td text-gray-800 font-bold text-center">${item.loc1 || ''}</td>
+                    <td class="excel-td text-gray-800 text-center">${item.loc2 || ''}</td>
+                    <td class="excel-td text-gray-800 text-center">${item.loc3 || ''}</td>
+                    <td class="excel-td font-bold text-[#16a34a] text-center">${steelType}</td>
+                    <td class="excel-td font-bold text-[#16a34a] text-center">${steelType==='AL'?'2.7':'7.85'}</td>
+                    <td class="excel-td font-bold text-gray-800 text-center px-1">${item.material}</td>
+                    <td class="excel-td text-gray-800 text-center">${item.thickness}</td>
+                    <td class="excel-td text-gray-800 text-center">${item.width}</td>
+                    <td class="excel-td text-gray-800 text-center">${item.height}</td>
+                    <td class="excel-td bg-[#fde047] font-bold text-red-600 text-[13px] text-center">${item.qty}</td>
+                    <td class="excel-td text-[11px] text-center px-1 truncate max-w-[120px]">${item.note||''}</td>
+                    <td class="excel-td text-[11px] text-center px-1 truncate max-w-[100px]">${item.note2||''}</td>
+                    <td class="excel-td bg-[#f1f5f9] font-bold text-blue-700 text-[13px] text-center">${item.qty}</td> 
+                    <td class="excel-td bg-gray-50 text-center">${formatOut(item.out_qty)}</td>
+                    <td class="excel-td bg-gray-50 text-center">${formatIn(item.in_ext_qty)}</td>
+                    <td class="excel-td bg-gray-50 text-center">${formatOut(item.out_ext_qty)}</td>
+                    <td class="excel-td bg-gray-50 text-center">${formatIn(item.in_return_qty)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        /* ================= 2. 자재 상세 관리 (Firebase Update) ================= */
+        function selectZone(zoneNumber) {
+            document.getElementById('editLoc1').value = zoneNumber;
+            document.querySelectorAll('.zone-btn').forEach(btn => {
+                if (btn.innerText === zoneNumber) btn.classList.add('active');
+                else btn.classList.remove('active');
+            });
+        }
+        function openEditModal(index) {
+            currentEditingIndex = index;
+            const item = inventoryData[index];
+            document.getElementById('editTargetDesc').innerText = `[${item.material}] ${item.thickness}T x ${item.width} x ${item.height} (현재 재고: ${item.qty}개)`;
+            
+            document.getElementById('editLoc1').value = item.loc1 || '';
+            document.getElementById('editLoc2').value = item.loc2 || '';
+            document.getElementById('editLoc3').value = item.loc3 || '';
+            document.getElementById('editQty').value = item.qty;
+            
+            document.querySelectorAll('.zone-btn').forEach(btn => {
+                if (item.loc1 && btn.innerText === item.loc1) btn.classList.add('active');
+                else btn.classList.remove('active');
+            });
+            document.getElementById('editModal').classList.remove('hidden');
+        }
+        function saveLocation() {
+            if (currentEditingIndex > -1) {
+                const item = inventoryData[currentEditingIndex];
+                const loc1 = document.getElementById('editLoc1').value.trim();
+                const loc2 = document.getElementById('editLoc2').value.trim();
+                const loc3 = document.getElementById('editLoc3').value.trim();
+                
+                db.collection("inventory").doc(item.id).update({ loc1, loc2, loc3 }).then(() => {
+                    alert("위치가 DB에 저장되었습니다.");
+                }).catch(err => alert("저장 실패: " + err.message));
+            }
+        }
+        function saveQuantity() {
+            if (currentEditingIndex > -1) {
+                const item = inventoryData[currentEditingIndex];
+                const qty = parseInt(document.getElementById('editQty').value) || 0;
+                
+                db.collection("inventory").doc(item.id).update({ qty }).then(() => {
+                    alert("수량이 DB에 강제 조정되었습니다.");
+                }).catch(err => alert("저장 실패: " + err.message));
+            }
+        }
+        function openInboundFromEdit() {
+            if (currentEditingIndex > -1) {
+                const item = inventoryData[currentEditingIndex];
+                closeModal('editModal');
+                openInboundModal();
+                document.getElementById('inMaterial').value = item.material;
+                document.getElementById('inThickness').value = item.thickness;
+                document.getElementById('inWidth').value = item.width;
+                document.getElementById('inHeight').value = item.height;
+                const sel = document.getElementById('inSteelType');
+                sel.value = item.material.toUpperCase().includes('AL') ? 'AL' : 'ST';
+                autoFillGravity();
+            }
+        }
+        function openOutboundFromEdit() {
+            if (currentEditingIndex > -1) {
+                const item = inventoryData[currentEditingIndex];
+                closeModal('editModal');
+                openOutboundModal();
+                document.getElementById('outMaterial').value = item.material;
+                updateThicknessList();
+                document.getElementById('outThickness').value = item.thickness;
+                updateWidthList();
+                document.getElementById('outWidth').value = item.width;
+                updateHeightList();
+                document.getElementById('outHeight').value = item.height;
+                checkCurrentStock();
+            }
+        }
+
+        /* ================= 3. 입고증 작성 (Firebase Set/Merge) ================= */
+        function openInboundModal() {
+            document.getElementById('inboundType').value = '입고';
+            document.getElementById('inDate').value = formattedToday;
+            document.getElementById('inSteelType').value = '';
+            document.getElementById('inGravity').value = '';
+            document.getElementById('inMaterial').value = '';
+            document.getElementById('inThickness').value = '';
+            document.getElementById('inWidth').value = '';
+            document.getElementById('inHeight').value = '';
+            document.getElementById('inQty').value = '';
+            document.getElementById('inNote').value = '';
+            document.getElementById('inNote2').value = '';
+            document.getElementById('inboundModal').classList.remove('hidden');
+        }
+        function autoFillGravity() {
+            const sel = document.getElementById('inSteelType');
+            document.getElementById('inGravity').value = sel.options[sel.selectedIndex].getAttribute('data-grav') || '';
+        }
+        
+        function processInbound() {
+            const type = document.getElementById('inboundType').value;
+            const dateStr = document.getElementById('inDate').value || formattedToday;
+            const mat = document.getElementById('inMaterial').value.trim();
+            const thk = parseFloat(document.getElementById('inThickness').value) || 0;
+            const wid = parseFloat(document.getElementById('inWidth').value) || 0;
+            const hgt = parseFloat(document.getElementById('inHeight').value) || 0;
+            const qty = parseInt(document.getElementById('inQty').value) || 0;
+            
+            if (!mat || qty <= 0) return alert('재질과 정상적인 수량을 입력하세요.');
+            
+            const docId = generateDocId(mat, thk, wid, hgt);
+            let item = inventoryData.find(i => i.id === docId);
+            
+            let updateData = item ? { ...item } : { 
+                material: mat, thickness: thk, width: wid, height: hgt, 
+                qty: 0, in_qty: 0, in_ext_qty: 0, in_return_qty: 0, out_qty: 0, out_ext_qty: 0, 
+                note: "", note2: "", loc1: "", loc2: "", loc3: "" 
+            };
+            
+            updateData.qty += qty;
+            if(type === '입고') updateData.in_qty += qty;
+            if(type === '외부입고') updateData.in_ext_qty += qty;
+            if(type === '반입') updateData.in_return_qty += qty;
+            
+            delete updateData.id; // 삭제용 id 필드 제거
+
+            db.collection("inventory").doc(docId).set(updateData, { merge: true }).then(() => {
+                addHistoryLog(type, mat, thk, wid, hgt, qty, dateStr);
+                closeModal('inboundModal');
+            }).catch(err => alert("DB 오류: " + err.message));
+        }
+
+        /* ================= 4. 출고증 작성 (Firebase Update) ================= */
+        function initOutboundFilters() {
+            const mats = [...new Set(inventoryData.map(i => i.material))].sort();
+            document.getElementById('outMatList').innerHTML = mats.map(m => `<option value="${m}"></option>`).join('');
+        }
+        function updateThicknessList() {
+            const mat = document.getElementById('outMaterial').value;
+            const thks = [...new Set(inventoryData.filter(i => i.material === mat).map(i => i.thickness))].sort((a,b)=>a-b);
+            document.getElementById('outThkList').innerHTML = thks.map(t => `<option value="${t}"></option>`).join('');
+            checkCurrentStock();
+        }
+        function updateWidthList() {
+            const mat = document.getElementById('outMaterial').value; const thk = parseFloat(document.getElementById('outThickness').value);
+            const wids = [...new Set(inventoryData.filter(i => i.material === mat && i.thickness === thk).map(i => i.width))].sort((a,b)=>a-b);
+            document.getElementById('outWidList').innerHTML = wids.map(w => `<option value="${w}"></option>`).join('');
+            checkCurrentStock();
+        }
+        function updateHeightList() {
+            const mat = document.getElementById('outMaterial').value; const thk = parseFloat(document.getElementById('outThickness').value); const wid = parseFloat(document.getElementById('outWidth').value);
+            const hgts = [...new Set(inventoryData.filter(i => i.material === mat && i.thickness === thk && i.width === wid).map(i => i.height))].sort((a,b)=>a-b);
+            document.getElementById('outHgtList').innerHTML = hgts.map(h => `<option value="${h}"></option>`).join('');
+            checkCurrentStock();
+        }
+        function checkCurrentStock() {
+            const mat = document.getElementById('outMaterial').value; const thk = parseFloat(document.getElementById('outThickness').value); const wid = parseFloat(document.getElementById('outWidth').value); const hgt = parseFloat(document.getElementById('outHeight').value);
+            const docId = generateDocId(mat, thk, wid, hgt);
+            const item = inventoryData.find(i => i.id === docId);
+            document.getElementById('currentStockDisplay').innerText = item ? `${item.qty} 개` : '0 개';
+        }
+
+        function openOutboundModal() { 
+            initOutboundFilters();
+            document.getElementById('outDate').value = formattedToday;
+            document.getElementById('outMaterial').value = '';
+            document.getElementById('outThickness').value = '';
+            document.getElementById('outWidth').value = '';
+            document.getElementById('outHeight').value = '';
+            document.getElementById('outQty').value = '';
+            document.getElementById('outDept').value = '';
+            document.getElementById('outEmp').value = '';
+            document.getElementById('outProject').value = '';
+            document.getElementById('currentStockDisplay').innerText = '0 개';
+            document.getElementById('outboundModal').classList.remove('hidden'); 
+        }
+
+        function processOutbound() {
+            const type = document.getElementById('outboundType').value;
+            const dateStr = document.getElementById('outDate').value || formattedToday;
+            const mat = document.getElementById('outMaterial').value;
+            const thk = parseFloat(document.getElementById('outThickness').value);
+            const wid = parseFloat(document.getElementById('outWidth').value);
+            const hgt = parseFloat(document.getElementById('outHeight').value);
+            const qty = parseInt(document.getElementById('outQty').value) || 0;
+            
+            const dept = document.getElementById('outDept').value || '-';
+            const emp = document.getElementById('outEmp').value || '-';
+            const project = document.getElementById('outProject').value || '-';
+
+            const docId = generateDocId(mat, thk, wid, hgt);
+            const item = inventoryData.find(i => i.id === docId);
+            
+            if (!item) return alert('일치하는 자재가 없습니다.');
+            if (qty <= 0) return alert('수량을 입력하세요.');
+
+            if (qty > item.qty) {
+                document.getElementById('reqDate').innerText = dateStr;
+                document.getElementById('reqMaterial').innerText = mat;
+                document.getElementById('reqSpec').innerText = `${thk}T x ${wid} x ${hgt}`;
+                document.getElementById('reqCurrentStock').innerText = `${item.qty} 개`;
+                document.getElementById('reqOutQty').innerText = `${qty} 개`;
+                document.getElementById('reqShortage').innerText = `${qty - item.qty} 개`;
+                closeModal('outboundModal');
+                document.getElementById('purchaseModal').classList.remove('hidden');
+                return;
+            }
+
+            let updateData = { qty: item.qty - qty };
+            if(type === '출고') updateData.out_qty = item.out_qty + qty;
+            if(type === '외부반출') updateData.out_ext_qty = item.out_ext_qty + qty;
+
+            db.collection("inventory").doc(docId).update(updateData).then(() => {
+                addHistoryLog(type, mat, thk, wid, hgt, -qty, dateStr);
+                
+                document.getElementById('prtOutDate').innerText = dateStr;
+                document.getElementById('prtOutType').innerText = type;
+                document.getElementById('prtOutDept').innerText = dept;
+                document.getElementById('prtOutEmp').innerText = emp;
+                document.getElementById('prtOutProject').innerText = project;
+                document.getElementById('prtOutMaterial').innerText = mat;
+                document.getElementById('prtOutSpec').innerText = `${thk}T x ${wid} x ${hgt}`;
+                document.getElementById('prtOutQty').innerText = `${qty} 개`;
+                document.getElementById('prtOutRemain').innerText = `${item.qty - qty} 개`;
+
+                closeModal('outboundModal');
+                document.getElementById('printOutboundModal').classList.remove('hidden');
+            }).catch(err => alert("DB 오류: " + err.message));
+        }
+
+        /* ================= 5. 공통 (모달 및 캡처) ================= */
+        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+        async function captureImage(elementId) {
+            const el = document.getElementById(elementId);
+            try {
+                const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+                canvas.toBlob(async function(blob) {
+                    try {
+                        const item = new ClipboardItem({ "image/png": blob });
+                        await navigator.clipboard.write([item]);
+                        alert("클립보드에 깔끔하게 이미지로 복사되었습니다.\n메신저에 [Ctrl+V] 하세요.");
+                    } catch (err) {
+                        alert("브라우저 권한 문제로 이미지로 자동 다운로드됩니다.");
+                        saveAs(blob, `문서_${new Date().getTime()}.png`);
+                    }
+                }, 'image/png');
+            } catch (err) {
+                alert("이미지 캡처 중 오류가 발생했습니다.");
+            }
+        }
+
+        /* ================= 6. 히스토리 기록 (Firebase Add/Delete) ================= */
+        function addHistoryLog(type, mat, thk, wid, hgt, qty, dateStr) {
+            db.collection("history").add({
+                type, mat, thk, wid, hgt, qty, date: dateStr,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        }
+
+        function getFilteredHistoryLogs() {
+            const start = document.getElementById('histStartDate').value;
+            const end = document.getElementById('histEndDate').value;
+            const type = document.getElementById('histType').value;
+            const keyword = document.getElementById('histSearch').value.toLowerCase();
+            
+            return historyLogs.filter(log => {
+                if (start && log.date < start) return false;
+                if (end && log.date > end) return false;
+                if (type && log.type !== type) return false;
+                if (keyword && !(log.mat.toLowerCase().includes(keyword))) return false; 
+                return true;
+            });
+        }
+
+        function renderHistory() {
+            const filtered = getFilteredHistoryLogs();
+            const tbody = document.getElementById('historyBody');
+            tbody.innerHTML = filtered.map(log => {
+                const qtyClass = log.qty > 0 ? 'text-blue-600' : 'text-red-600';
+                const typeClass = log.qty > 0 ? 'text-blue-600' : 'text-red-600';
+                const qtyText = log.qty > 0 ? `+${Math.abs(log.qty)}` : `-${Math.abs(log.qty)}`;
+                
+                return `
+                <tr class="hover:bg-blue-50 border-b border-gray-300">
+                    <td class="p-2 text-gray-700">${log.date}</td>
+                    <td class="p-2 font-bold ${typeClass}">${log.type}</td>
+                    <td class="p-2 font-bold text-gray-800">${log.mat}</td>
+                    <td class="p-2">${log.thk}</td>
+                    <td class="p-2">${log.wid}</td>
+                    <td class="p-2">${log.hgt}</td>
+                    <td class="p-2 font-bold ${qtyClass}">${qtyText}</td>
+                    <td class="p-2"><button onclick="revertHistory('${log.id}')" class="text-xs bg-red-100 text-red-700 px-3 py-1.5 rounded border border-red-300 hover:bg-red-200 shadow-sm font-bold transition">삭제(복구)</button></td>
+                </tr>`;
+            }).join('');
+        }
+
+        async function exportHistoryExcel() {
+            const filtered = getFilteredHistoryLogs();
+            if(filtered.length === 0) return alert("다운로드할 검색 내역이 없습니다.");
+            
+            const wb = new ExcelJS.Workbook();
+            const ws = wb.addWorksheet('입출고 내역');
+            
+            ws.columns = [
+                { header: '일자', key: 'date', width: 15 },
+                { header: '유형', key: 'type', width: 15 },
+                { header: '재질', key: 'mat', width: 25 },
+                { header: '두께', key: 'thk', width: 10 },
+                { header: '가로', key: 'wid', width: 10 },
+                { header: '세로', key: 'hgt', width: 10 },
+                { header: '수량', key: 'qty', width: 10 }
+            ];
+            
+            ws.getRow(1).font = { bold: true };
+            ws.getRow(1).alignment = { horizontal: 'center' };
+            
+            filtered.forEach(log => {
+                ws.addRow({ date: log.date, type: log.type, mat: log.mat, thk: log.thk, wid: log.wid, hgt: log.hgt, qty: log.qty });
+            });
+            
+            const buffer = await wb.xlsx.writeBuffer();
+            saveAs(new Blob([buffer]), `입출고_검색내역_${new Date().getTime()}.xlsx`);
+        }
+
+        function revertHistory(id) {
+            if(!confirm("이 기록을 삭제하고 데이터베이스에서 재고를 롤백하시겠습니까?")) return;
+            const log = historyLogs.find(l => l.id === id);
+            if(!log) return;
+
+            const docId = generateDocId(log.mat, log.thk, log.wid, log.hgt);
+            const item = inventoryData.find(i => i.id === docId);
+            
+            if (item) {
+                let updateData = { qty: item.qty - log.qty };
+                
+                const absQty = Math.abs(log.qty);
+                if(log.type === '입고') updateData.in_qty = item.in_qty - absQty;
+                if(log.type === '외부입고') updateData.in_ext_qty = item.in_ext_qty - absQty;
+                if(log.type === '반입') updateData.in_return_qty = item.in_return_qty - absQty;
+                if(log.type === '출고') updateData.out_qty = item.out_qty - absQty;
+                if(log.type === '외부반출') updateData.out_ext_qty = item.out_ext_qty - absQty;
+
+                db.collection("inventory").doc(item.id).update(updateData).then(() => {
+                    db.collection("history").doc(id).delete().then(() => {
+                        alert("재고 수량 및 누계가 DB에서 롤백되었습니다.");
+                    });
+                }).catch(err => alert("원복 실패: " + err.message));
+            }
+        }
+        
+        function openHistoryModal() { 
+            const lastMonth = new Date();
+            lastMonth.setDate(lastMonth.getDate() - 30);
+            document.getElementById('histStartDate').value = lastMonth.toISOString().split('T')[0];
+            document.getElementById('histEndDate').value = formattedToday;
+            renderHistory();
+            document.getElementById('historyModal').classList.remove('hidden'); 
+        }
+
+        /* ================= 7. 엑셀 연동 (업로드 시 Firestore 전체 동기화) ================= */
+        async function importExcel(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async function(evt) {
+                const wb = new ExcelJS.Workbook();
+                await wb.xlsx.load(evt.target.result);
+                templateWorkbook = wb; 
+                const ws = wb.worksheets[0]; 
+                const newData = [];
+                
+                ws.eachRow((row, rowNumber) => {
+                    if (rowNumber >= 10) {
+                        const materialCell = row.getCell(7).value;
+                        const material = materialCell ? String(materialCell).trim() : "";
+                        if (material !== "") {
+                            newData.push({
+                                loc1: row.getCell(2).value ? String(row.getCell(2).value) : "",
+                                loc2: row.getCell(3).value ? String(row.getCell(3).value) : "",
+                                loc3: row.getCell(4).value ? String(row.getCell(4).value) : "",
+                                material: material,
+                                thickness: parseFloat(row.getCell(8).value) || 0,
+                                width: parseFloat(row.getCell(9).value) || 0,
+                                height: parseFloat(row.getCell(10).value) || 0,
+                                qty: parseInt(row.getCell(13).value) || parseInt(row.getCell(16).value) || 0,
+                                note: row.getCell(14).value ? String(row.getCell(14).value).trim() : "",
+                                note2: row.getCell(15).value ? String(row.getCell(15).value).trim() : "",
+                                out_qty: Math.abs(parseInt(row.getCell(17).value) || 0),
+                                in_ext_qty: parseInt(row.getCell(18).value) || 0,
+                                out_ext_qty: Math.abs(parseInt(row.getCell(19).value) || 0),
+                                in_return_qty: parseInt(row.getCell(20).value) || 0
+                            });
+                        }
+                    }
+                });
+                
+                alert("엑셀 데이터를 DB에 동기화합니다. 완료될 때까지 창을 닫지 마세요.");
+                try {
+                    const promises = newData.map(item => {
+                        const docId = generateDocId(item.material, item.thickness, item.width, item.height);
+                        return db.collection("inventory").doc(docId).set(item, { merge: true });
+                    });
+                    await Promise.all(promises);
+                    alert('업로드 성공! 모든 데이터가 Firestore에 반영되었습니다.');
+                } catch (error) {
+                    alert("업로드 중 오류 발생: " + error.message);
+                }
+                e.target.value = ''; 
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        async function exportExcel() {
+            let wb = templateWorkbook;
+            let ws;
+            if (wb) {
+                ws = wb.worksheets[0];
+                const maxRow = ws.rowCount;
+                for (let i = 10; i <= maxRow; i++) {
+                    const row = ws.getRow(i);
+                    row.eachCell((cell) => { cell.value = null; });
+                    row.commit();
+                }
+                let rowIndex = 10;
+                inventoryData.forEach((item, index) => {
+                    const row = ws.getRow(rowIndex);
+                    row.getCell(1).value = index + 1;
+                    row.getCell(2).value = item.loc1; row.getCell(3).value = item.loc2; row.getCell(4).value = item.loc3;
+                    
+                    const isAL = item.material.toUpperCase().includes('AL');
+                    row.getCell(5).value = isAL ? 'AL' : 'ST';
+                    row.getCell(6).value = isAL ? 2.7 : 7.85;
+                    row.getCell(7).value = item.material;
+                    row.getCell(8).value = item.thickness;
+                    row.getCell(9).value = item.width;
+                    row.getCell(10).value = item.height;
+                    row.getCell(13).value = item.qty;
+                    row.getCell(14).value = item.note;
+                    row.getCell(15).value = item.note2;
+                    row.getCell(16).value = item.qty;
+                    
+                    // 누계 연동
+                    row.getCell(17).value = item.out_qty > 0 ? -item.out_qty : null;
+                    row.getCell(18).value = item.in_ext_qty > 0 ? item.in_ext_qty : null;
+                    row.getCell(19).value = item.out_ext_qty > 0 ? -item.out_ext_qty : null;
+                    row.getCell(20).value = item.in_return_qty > 0 ? item.in_return_qty : null;
+                    
+                    row.commit();
+                    rowIndex++;
+                });
+            } else {
+                alert("업로드된 원본 양식이 없어 임시 양식으로 다운로드됩니다.\n완벽한 디자인 유지를 위해 먼저 [엑셀 양식 업로드]를 권장합니다.");
+                wb = new ExcelJS.Workbook();
+                ws = wb.addWorksheet('실물재고 조사');
+                ws.columns = [{ header: 'NO.', key: 'no', width: 5 }, { header: '재질', key: 'mat', width: 22 }, { header: '두께(mm)', key: 'thk', width: 10 }, { header: '실물재고', key: 'qty', width: 10 }];
+                inventoryData.forEach((item, idx) => { ws.addRow({ no: idx + 1, mat: item.material, thk: item.thickness, qty: item.qty }); });
+            }
+            const buffer = await wb.xlsx.writeBuffer();
+            saveAs(new Blob([buffer]), `2026년_원자재_재고_현황_${new Date().getTime()}.xlsx`);
+        }
+    </script>
+</body>
+</html>
